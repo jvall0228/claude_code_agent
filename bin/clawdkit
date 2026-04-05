@@ -15,6 +15,7 @@
 #   uninstall [instance] Remove the heartbeat scheduler
 #   logs [instance]      Tail the agent's progress log
 #   attach [instance]    Attach to the agent's tmux session
+#   heartbeat [instance]  Manually trigger a heartbeat
 #   list                 List running clawdkit tmux sessions
 #
 # Flags:
@@ -52,7 +53,7 @@ for arg in "$@"; do
     --debug|--json)
       FLAGS="$FLAGS $arg"
       ;;
-    start|stop|restart|status|health|clear|install|uninstall|logs|attach|list)
+    start|stop|restart|status|health|clear|heartbeat|install|uninstall|logs|attach|list)
       if [ -z "$COMMAND" ]; then
         COMMAND="$arg"
       else
@@ -89,6 +90,7 @@ if [ -z "$COMMAND" ]; then
   printf '  clear     Clear context window\n' >&2
   printf '  install   Install heartbeat scheduler\n' >&2
   printf '  uninstall Remove heartbeat scheduler\n' >&2
+  printf '  heartbeat Manually trigger a heartbeat\n' >&2
   printf '  logs      Tail progress log\n' >&2
   printf '  attach    Attach to tmux session\n' >&2
   printf '  list      List running sessions\n' >&2
@@ -102,6 +104,14 @@ INSTANCE="${INSTANCE:-clawdkit}"
 # Handle commands that don't delegate to clawdkit.sh
 # ---------------------------------------------------------------------------
 case "$COMMAND" in
+  heartbeat)
+    HEARTBEAT_SH="${REPO_ROOT}/daemon/scripts/heartbeat.sh"
+    if [ ! -f "$HEARTBEAT_SH" ]; then
+      printf 'clawdkit: cannot find heartbeat.sh at %s\n' "$HEARTBEAT_SH" >&2
+      exit 1
+    fi
+    exec "$HEARTBEAT_SH" "$INSTANCE"
+    ;;
   logs)
     LOG_FILE="${HOME}/.clawdcode/${INSTANCE}/.clawdkit/progress.log"
     if [ ! -f "$LOG_FILE" ]; then
