@@ -18,14 +18,27 @@ const SESSION_NAME = `clawdkit-${AGENT_NAME}`
 
 /** Send keystrokes to our own tmux session. */
 async function tmuxSendKeys(keys: string): Promise<void> {
-  const proc = Bun.spawn(['tmux', 'send-keys', '-t', SESSION_NAME, keys, 'Enter'], {
+  // Send command text with -l (literal) to avoid tmux interpreting
+  // characters like (, ), C-, M- as key names.
+  const textProc = Bun.spawn(['tmux', 'send-keys', '-t', SESSION_NAME, '-l', keys], {
     stdout: 'pipe',
     stderr: 'pipe',
   })
-  const exitCode = await proc.exited
-  if (exitCode !== 0) {
-    const stderr = await new Response(proc.stderr).text()
-    throw new Error(`tmux send-keys failed (exit ${exitCode}): ${stderr.trim()}`)
+  const textExit = await textProc.exited
+  if (textExit !== 0) {
+    const stderr = await new Response(textProc.stderr).text()
+    throw new Error(`tmux send-keys (text) failed (exit ${textExit}): ${stderr.trim()}`)
+  }
+
+  // Send Enter separately as a key name (not literal).
+  const enterProc = Bun.spawn(['tmux', 'send-keys', '-t', SESSION_NAME, 'Enter'], {
+    stdout: 'pipe',
+    stderr: 'pipe',
+  })
+  const enterExit = await enterProc.exited
+  if (enterExit !== 0) {
+    const stderr = await new Response(enterProc.stderr).text()
+    throw new Error(`tmux send-keys (Enter) failed (exit ${enterExit}): ${stderr.trim()}`)
   }
 }
 
