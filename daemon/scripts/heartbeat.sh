@@ -93,6 +93,8 @@ fi
 
 # 5. POST to heartbeat MCP
 HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' \
+  --max-time 10 \
+  --connect-timeout 3 \
   -X POST \
   -H 'Content-Type: text/plain' \
   --data-raw "$PROMPT" \

@@ -31,14 +31,14 @@ fi
 # Telegram channel config (instance dir)
 TELEGRAM_MCP="${INSTANCE_DIR}/.mcp-telegram.json"
 if [ -f "$TELEGRAM_MCP" ]; then
-  CHANNEL_FLAGS="${CHANNEL_FLAGS} --dangerously-load-development-channels ${TELEGRAM_MCP}"
+  CHANNEL_FLAGS="${CHANNEL_FLAGS} ${TELEGRAM_MCP}"
 fi
 
 # iMessage channel — macOS only
 if [ "$OS" = "Darwin" ]; then
   IMESSAGE_MCP="${INSTANCE_DIR}/.mcp-imessage.json"
   if [ -f "$IMESSAGE_MCP" ]; then
-    CHANNEL_FLAGS="${CHANNEL_FLAGS} --dangerously-load-development-channels ${IMESSAGE_MCP}"
+    CHANNEL_FLAGS="${CHANNEL_FLAGS} ${IMESSAGE_MCP}"
   fi
 fi
 

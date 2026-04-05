@@ -23,12 +23,21 @@ if command -v jq >/dev/null 2>&1; then
   printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":%s}}' \
     "$(printf '%s' "$CONTENT" | jq -Rs .)"
 else
-  # Manual JSON escaping via sed: backslash, double-quote, newline, carriage-return, tab
+  # Safety check: if file is large (>50K chars), output empty context with warning
+  CONTENT_LEN="${#CONTENT}"
+  if [ "$CONTENT_LEN" -gt 50000 ]; then
+    printf 'inject-soul.sh: file exceeds 50K chars (%d), skipping injection to avoid hook limit\n' "$CONTENT_LEN" >&2
+    CONTENT=""
+  fi
+  # Manual JSON escaping: backslash first, then double-quote, tab, newlines
   ESCAPED="$(printf '%s' "$CONTENT" \
     | sed 's/\\/\\\\/g' \
     | sed 's/"/\\"/g' \
     | sed 's/	/\\t/g' \
     | tr '\n' '\r' \
-    | sed 's/\r/\\n/g')"
+    | sed 's/\r/\\n/g')" || {
+    printf 'inject-soul.sh: JSON escaping failed — injecting empty context\n' >&2
+    ESCAPED=""
+  }
   printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}' "$ESCAPED"
 fi

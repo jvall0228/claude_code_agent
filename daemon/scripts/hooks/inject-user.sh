@@ -23,11 +23,19 @@ if command -v jq >/dev/null 2>&1; then
   printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":%s}}' \
     "$(printf '%s' "$CONTENT" | jq -Rs .)"
 else
+  CONTENT_LEN="${#CONTENT}"
+  if [ "$CONTENT_LEN" -gt 50000 ]; then
+    printf 'inject-user.sh: file exceeds 50K chars (%d), skipping injection to avoid hook limit\n' "$CONTENT_LEN" >&2
+    CONTENT=""
+  fi
   ESCAPED="$(printf '%s' "$CONTENT" \
     | sed 's/\\/\\\\/g' \
     | sed 's/"/\\"/g' \
     | sed 's/	/\\t/g' \
     | tr '\n' '\r' \
-    | sed 's/\r/\\n/g')"
+    | sed 's/\r/\\n/g')" || {
+    printf 'inject-user.sh: JSON escaping failed — injecting empty context\n' >&2
+    ESCAPED=""
+  }
   printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"%s"}}' "$ESCAPED"
 fi

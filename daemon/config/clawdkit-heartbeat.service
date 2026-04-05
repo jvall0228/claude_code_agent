@@ -6,7 +6,7 @@ After=network.target
 Type=oneshot
 ExecStart={{CLAWDKIT_SCRIPTS_PATH}}/heartbeat.sh {{AGENT_NAME}}
 Environment=HOME={{HOME}}
-Environment=PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin:/opt/local/bin
 StandardOutput=append:{{INSTANCE_DIR}}/.clawdkit/heartbeat-systemd.log
 StandardError=append:{{INSTANCE_DIR}}/.clawdkit/heartbeat-systemd.log
 

@@ -56,3 +56,12 @@ Bun.serve({
 })
 
 process.stderr.write(`clawdkit-heartbeat: listening on 127.0.0.1:${PORT}\n`)
+
+process.on('unhandledRejection', (reason) => {
+  process.stderr.write(`clawdkit-heartbeat: unhandled rejection: ${reason}\n`)
+})
+
+process.on('uncaughtException', (err) => {
+  process.stderr.write(`clawdkit-heartbeat: uncaught exception: ${err.message}\n`)
+  process.exit(1)
+})

@@ -119,19 +119,93 @@ do_health() {
 }
 
 do_install() {
-  printf 'clawdkit install: full scheduler integration coming in Unit 5.\n'
-  printf 'Use: make install INSTANCE=%s\n' "$INSTANCE"
-  printf 'OS detected: %s\n' "$OS"
+  TEMPLATES_DIR="$(cd "${DAEMON_DIR}/config" && pwd)"
+
   if [ "$OS" = "Darwin" ]; then
-    printf 'Platform: launchd (macOS) — stub only\n'
+    # macOS: launchd plist
+    PLIST_LABEL="com.clawdkit.heartbeat.${INSTANCE}"
+    PLIST_DEST="${HOME}/Library/LaunchAgents/${PLIST_LABEL}.plist"
+    PLIST_SRC="${TEMPLATES_DIR}/com.clawdkit.heartbeat.plist"
+
+    if [ ! -f "$PLIST_SRC" ]; then
+      printf 'clawdkit install: plist template not found at %s\n' "$PLIST_SRC" >&2
+      exit 1
+    fi
+
+    # Stamp placeholders
+    mkdir -p "${HOME}/Library/LaunchAgents"
+    sed \
+      -e "s|{{AGENT_NAME}}|${INSTANCE}|g" \
+      -e "s|{{CLAWDKIT_SCRIPTS_PATH}}|${CLAWDKIT_SCRIPTS_PATH}|g" \
+      -e "s|{{INSTANCE_DIR}}|${INSTANCE_DIR}|g" \
+      -e "s|{{HOME}}|${HOME}|g" \
+      "$PLIST_SRC" > "$PLIST_DEST"
+    chmod 644 "$PLIST_DEST"
+
+    # Validate
+    plutil -lint "$PLIST_DEST" || { printf 'clawdkit install: plist validation failed\n' >&2; exit 1; }
+
+    # Load via launchctl bootstrap (current macOS API)
+    launchctl bootstrap "gui/$(id -u)" "$PLIST_DEST"
+    printf 'clawdkit install: launchd job %s installed and loaded\n' "$PLIST_LABEL"
+
   else
-    printf 'Platform: systemd (Linux) — stub only\n'
+    # Linux: systemd user timer
+    SYSTEMD_DIR="${HOME}/.config/systemd/user"
+    SERVICE_NAME="clawdkit-heartbeat-${INSTANCE}"
+    SERVICE_SRC="${TEMPLATES_DIR}/clawdkit-heartbeat.service"
+    TIMER_SRC="${TEMPLATES_DIR}/clawdkit-heartbeat.timer"
+    SERVICE_DEST="${SYSTEMD_DIR}/${SERVICE_NAME}.service"
+    TIMER_DEST="${SYSTEMD_DIR}/${SERVICE_NAME}.timer"
+
+    if [ ! -f "$SERVICE_SRC" ] || [ ! -f "$TIMER_SRC" ]; then
+      printf 'clawdkit install: systemd templates not found in %s\n' "$TEMPLATES_DIR" >&2
+      exit 1
+    fi
+
+    mkdir -p "$SYSTEMD_DIR"
+
+    # Stamp placeholders
+    sed \
+      -e "s|{{AGENT_NAME}}|${INSTANCE}|g" \
+      -e "s|{{CLAWDKIT_SCRIPTS_PATH}}|${CLAWDKIT_SCRIPTS_PATH}|g" \
+      -e "s|{{INSTANCE_DIR}}|${INSTANCE_DIR}|g" \
+      -e "s|{{HOME}}|${HOME}|g" \
+      "$SERVICE_SRC" > "$SERVICE_DEST"
+
+    sed \
+      -e "s|{{AGENT_NAME}}|${INSTANCE}|g" \
+      "$TIMER_SRC" > "$TIMER_DEST"
+
+    systemctl --user daemon-reload
+    systemctl --user enable --now "${SERVICE_NAME}.timer"
+    printf 'clawdkit install: systemd timer %s.timer enabled\n' "$SERVICE_NAME"
+    printf 'clawdkit install: run `loginctl enable-linger` to keep timer active when logged out\n'
   fi
 }
 
 do_uninstall() {
-  printf 'clawdkit uninstall: full scheduler integration coming in Unit 5.\n'
-  printf 'Use: make uninstall INSTANCE=%s\n' "$INSTANCE"
+  if [ "$OS" = "Darwin" ]; then
+    PLIST_LABEL="com.clawdkit.heartbeat.${INSTANCE}"
+    PLIST_DEST="${HOME}/Library/LaunchAgents/${PLIST_LABEL}.plist"
+
+    if launchctl list "$PLIST_LABEL" >/dev/null 2>&1; then
+      launchctl bootout "gui/$(id -u)" "$PLIST_DEST" 2>/dev/null || \
+        launchctl remove "$PLIST_LABEL" 2>/dev/null || true
+    fi
+
+    rm -f "$PLIST_DEST"
+    printf 'clawdkit uninstall: launchd job %s removed\n' "$PLIST_LABEL"
+
+  else
+    SERVICE_NAME="clawdkit-heartbeat-${INSTANCE}"
+    SYSTEMD_DIR="${HOME}/.config/systemd/user"
+
+    systemctl --user disable --now "${SERVICE_NAME}.timer" 2>/dev/null || true
+    rm -f "${SYSTEMD_DIR}/${SERVICE_NAME}.service" "${SYSTEMD_DIR}/${SERVICE_NAME}.timer"
+    systemctl --user daemon-reload
+    printf 'clawdkit uninstall: systemd timer %s.timer removed\n' "$SERVICE_NAME"
+  fi
 }
 
 # ---------------------------------------------------------------------------
