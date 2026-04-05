@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "clawdkit-heartbeat": {
+      "type": "stdio",
+      "command": "bun",
+      "args": ["run", "start"],
+      "cwd": "{{HEARTBEAT_MCP_PATH}}"
+    }
+  }
+}

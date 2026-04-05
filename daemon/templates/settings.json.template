@@ -1,0 +1,38 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{CLAWDKIT_SCRIPTS_PATH}}/hooks/inject-soul.sh {{BRAIN_PATH}}"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{CLAWDKIT_SCRIPTS_PATH}}/hooks/inject-identity.sh {{BRAIN_PATH}}"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{CLAWDKIT_SCRIPTS_PATH}}/hooks/inject-user.sh {{BRAIN_PATH}}"
+          }
+        ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "{{CLAWDKIT_SCRIPTS_PATH}}/hooks/inject-tools.sh {{BRAIN_PATH}}"
+          }
+        ]
+      }
+    ]
+  }
+}
