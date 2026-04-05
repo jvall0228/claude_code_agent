@@ -173,7 +173,12 @@ cat > "${INSTANCE_DIR}/.clawdkit/state.json" <<EOF
   "last_heartbeat": null,
   "session_started": null,
   "heartbeat_in_progress": false,
-  "notification_channel": "${CHANNEL}"
+  "notification_channel": "${CHANNEL}",
+  "daily_token_estimate": 0,
+  "daily_reset_date": null,
+  "max_daily_tokens": 150000,
+  "low_fuel_threshold_pct": 80,
+  "budget_mode": "normal"
 }
 EOF
 
