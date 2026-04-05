@@ -11,7 +11,9 @@
       "command": "bash",
       "args": ["-c", "cd {{SESSION_CONTROL_MCP_PATH}} && bun server.ts"],
       "env": {
-        "CLAWDKIT_AGENT_NAME": "{{AGENT_NAME}}"
+        "CLAWDKIT_AGENT_NAME": "{{AGENT_NAME}}",
+        "CLAWDKIT_SCRIPTS_PATH": "{{CLAWDKIT_SCRIPTS_PATH}}",
+        "CLAWDKIT_INSTANCE_DIR": "{{CLAWDKIT_INSTANCE_DIR}}"
       }
     }
   }

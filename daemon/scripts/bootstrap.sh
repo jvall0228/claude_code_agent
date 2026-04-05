@@ -240,6 +240,8 @@ sed \
   -e "s|{{HEARTBEAT_MCP_PATH}}|${MCP_DIR}|g" \
   -e "s|{{SESSION_CONTROL_MCP_PATH}}|${SESSION_CONTROL_DIR}|g" \
   -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
+  -e "s|{{CLAWDKIT_SCRIPTS_PATH}}|${SCRIPTS_PATH}|g" \
+  -e "s|{{CLAWDKIT_INSTANCE_DIR}}|${INSTANCE_DIR}|g" \
   "$MCP_JSON_TEMPLATE" > "${INSTANCE_DIR}/.mcp.json"
 
 # ---------------------------------------------------------------------------
