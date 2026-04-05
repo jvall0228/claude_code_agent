@@ -193,9 +193,21 @@ else
   cat > "$HEARTBEAT_DEST" <<'EOF'
 # Heartbeat
 
-You've been woken up by a scheduled heartbeat. Check in on your responsibilities proactively — review notifications, monitor open work, and surface anything that needs attention.
+You've been woken up by a scheduled heartbeat. This fires every 30 minutes — use it to check in proactively on anything that needs your attention.
 
-When you're done, update `state.json` with the current timestamp and clear your context window using the `clear_context` tool.
+## Standing Orders
+
+- **GitHub** — Check notifications, review open PRs, surface failing CI or stale work.
+- **Owner comms** — If anything is urgent or blocking, notify via your channel immediately. Otherwise, log it.
+- **Housekeeping** — If your session has been running for a long time, consider compacting context.
+
+## Judgment Calls
+
+You decide what needs attention right now. Not everything needs action every cycle — skip what's quiet, dig into what matters. If nothing needs doing, that's fine too.
+
+## When You're Done
+
+Update `state.json` with the current timestamp and clear your context window using the `clear_context` tool.
 EOF
 fi
 
