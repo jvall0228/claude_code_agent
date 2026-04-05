@@ -1,7 +1,7 @@
 ---
 title: "feat: Add daemon restart as a session control MCP tool"
 type: feat
-status: active
+status: completed
 date: 2026-04-05
 ---
 
