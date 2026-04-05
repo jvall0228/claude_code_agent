@@ -81,7 +81,44 @@ log "heartbeat started"
 # Ensure lock is removed on clean exit (SIGKILL will bypass this)
 trap 'remove_lock; log "heartbeat finished"' EXIT
 
-# 3. Check tmux session alive
+# 3. Budget gate — skip heartbeat POST when daily budget is exhausted
+STATE_FILE="${INSTANCE_DIR}/.clawdkit/state.json"
+BUDGET_SKIP=""
+if [ -f "$STATE_FILE" ]; then
+  # Extract budget fields via jq or python3 fallback
+  if command -v jq >/dev/null 2>&1; then
+    BUDGET_MODE="$(jq -r '.budget_mode // empty' "$STATE_FILE" 2>/dev/null)" || BUDGET_MODE=""
+    DAILY_ESTIMATE="$(jq -r '.daily_token_estimate // empty' "$STATE_FILE" 2>/dev/null)" || DAILY_ESTIMATE=""
+    MAX_DAILY="$(jq -r '.max_daily_tokens // empty' "$STATE_FILE" 2>/dev/null)" || MAX_DAILY=""
+    RESET_DATE="$(jq -r '.daily_reset_date // empty' "$STATE_FILE" 2>/dev/null)" || RESET_DATE=""
+  elif command -v python3 >/dev/null 2>&1; then
+    BUDGET_MODE="$(python3 -c "import json,sys; d=json.load(open('$STATE_FILE')); print(d.get('budget_mode',''))" 2>/dev/null)" || BUDGET_MODE=""
+    DAILY_ESTIMATE="$(python3 -c "import json,sys; d=json.load(open('$STATE_FILE')); print(d.get('daily_token_estimate',''))" 2>/dev/null)" || DAILY_ESTIMATE=""
+    MAX_DAILY="$(python3 -c "import json,sys; d=json.load(open('$STATE_FILE')); print(d.get('max_daily_tokens',''))" 2>/dev/null)" || MAX_DAILY=""
+    RESET_DATE="$(python3 -c "import json,sys; d=json.load(open('$STATE_FILE')); print(d.get('daily_reset_date',''))" 2>/dev/null)" || RESET_DATE=""
+  else
+    log "WARNING: neither jq nor python3 available — skipping budget check (fail-open)"
+  fi
+
+  # Allow heartbeat through if it's a new day (agent handles the reset)
+  TODAY="$(date +%Y-%m-%d)"
+  if [ -n "$BUDGET_MODE" ] && [ "$RESET_DATE" = "$TODAY" ]; then
+    if [ "$BUDGET_MODE" = "exhausted" ]; then
+      BUDGET_SKIP="budget_mode is exhausted"
+    elif [ -n "$DAILY_ESTIMATE" ] && [ -n "$MAX_DAILY" ] && [ "$MAX_DAILY" -gt 0 ] 2>/dev/null; then
+      if [ "$DAILY_ESTIMATE" -ge "$MAX_DAILY" ]; then
+        BUDGET_SKIP="daily_token_estimate ($DAILY_ESTIMATE) >= max_daily_tokens ($MAX_DAILY)"
+      fi
+    fi
+  fi
+fi
+
+if [ -n "$BUDGET_SKIP" ]; then
+  log "budget exhausted — skipping heartbeat POST ($BUDGET_SKIP)"
+  exit 0
+fi
+
+# 4. Check tmux session alive
 if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
   log "ERROR: tmux session ${SESSION_NAME} not found — daemon not running"
   exit 0
