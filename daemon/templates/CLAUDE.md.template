@@ -29,11 +29,66 @@ After reconstruction, resume where you left off. Do not announce that you have r
 
 When a heartbeat event arrives (via MCP tool call or file trigger):
 
-1. Read `{{INSTANCE_DIR}}/prompts/HEARTBEAT.md` for the current task list.
-2. Work through tasks in priority order. Complete one atomic unit of work per heartbeat if tasks are long-running.
-3. Update `{{INSTANCE_DIR}}/.clawdkit/state.json` after each task: set `last_heartbeat`, `active_task`, `queue`.
-4. Log significant actions to `{{INSTANCE_DIR}}/.clawdkit/progress.log` with ISO-8601 timestamp.
-5. If a task requires user input, send a message via `{{NOTIFICATION_CHANNEL}}` and set task status to `waiting`.
+1. **Budget check first** — run the Usage Budget Protocol (below) before any task work. If budget mode is `exhausted`, skip all proactive tasks and compact context.
+2. Read `{{INSTANCE_DIR}}/prompts/HEARTBEAT.md` for the current task list.
+3. Work through tasks in priority order. Complete one atomic unit of work per heartbeat if tasks are long-running. In `low-fuel` mode, skip proactive tasks and log what was skipped.
+4. **Estimate tokens used** — after completing work, estimate tokens consumed (input + output characters / 4) and add to `daily_token_estimate` in state.json.
+5. Update `{{INSTANCE_DIR}}/.clawdkit/state.json` after each task: set `last_heartbeat`, `active_task`, `queue`, and updated budget fields.
+6. Log significant actions to `{{INSTANCE_DIR}}/.clawdkit/progress.log` with ISO-8601 timestamp.
+7. If a task requires user input, send a message via `{{NOTIFICATION_CHANNEL}}` and set task status to `waiting`.
+
+## Usage Budget Protocol
+
+The daemon operates within a daily token budget to leave headroom for interactive sessions. Budget state lives in `state.json` alongside session state.
+
+### Budget Fields
+
+| Field | Default | Description |
+|---|---|---|
+| `daily_token_estimate` | 0 | Running estimate of tokens consumed today |
+| `daily_reset_date` | null | Date (YYYY-MM-DD, local timezone) of last reset |
+| `max_daily_tokens` | 150000 | Hard cap — daemon stops proactive work at this limit |
+| `low_fuel_threshold_pct` | 80 | Percentage of max at which low-fuel mode activates |
+| `budget_mode` | "normal" | Current mode: `normal`, `low-fuel`, or `exhausted` |
+
+### Daily Reset
+
+On each heartbeat or message, check `daily_reset_date` against today's date (`YYYY-MM-DD`, local timezone). If they differ:
+
+1. Set `daily_token_estimate` to 0.
+2. Set `budget_mode` to `normal`.
+3. Set `daily_reset_date` to today.
+4. Log: `daily budget reset — new day detected`.
+
+### Budget Modes
+
+**normal** — `daily_token_estimate` < `low_fuel_threshold_pct`% of `max_daily_tokens`
+- Process heartbeat tasks and messages normally.
+
+**low-fuel** — `daily_token_estimate` >= `low_fuel_threshold_pct`% of `max_daily_tokens`
+- Skip proactive heartbeat tasks (GitHub checks, housekeeping). Log what was skipped.
+- Still process inbound messages — never ignore the user.
+- Prefer compact, token-efficient responses.
+- Log: `entering low-fuel mode — <estimate>/<max> tokens (<pct>%)`.
+
+**exhausted** — `daily_token_estimate` >= `max_daily_tokens`
+- Do not process any proactive heartbeat tasks.
+- If woken by an inbound message: respond to it, warn the user that the daily budget is exhausted and recommend using an interactive session, then stop.
+- Compact context and wait for daily reset.
+- Log: `budget exhausted — <estimate>/<max> tokens`.
+- Note: `heartbeat.sh` also gates at this level — if `budget_mode` is `exhausted` (and it's still today), the heartbeat POST is skipped entirely, so the agent won't even wake up.
+
+### Token Estimation
+
+After each unit of work (heartbeat task, message exchange), estimate tokens consumed:
+
+- **Formula:** `(input_chars + output_chars) / 4`
+- This is a rough estimate — accuracy is not critical. The thresholds are conservative.
+- Add the estimate to `daily_token_estimate` and write state.json.
+
+### Backward Compatibility
+
+On startup or first heartbeat, if any budget field is missing from `state.json`, initialize it with the default value from the table above. Log: `initialized missing budget field: <field_name>`.
 
 ## Messaging Protocol
 
@@ -43,6 +98,7 @@ When an inbound message arrives via `{{NOTIFICATION_CHANNEL}}`:
 2. Execute or queue the requested work.
 3. Respond via the same channel tool used to receive the message.
 4. Log the exchange to `progress.log`.
+5. **Budget awareness** — if `budget_mode` is `exhausted`, process the current message but include a note that the daily budget is exhausted and recommend using an interactive session for further work.
 
 Keep responses concise. No filler. Prefer structured output (lists, brief summaries).
 

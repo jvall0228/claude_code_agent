@@ -150,6 +150,26 @@ do_health() {
     fi
     exit 1
   fi
+  # Read budget status from state.json
+  STATE_FILE="${INSTANCE_DIR}/.clawdkit/state.json"
+  BUDGET_MODE=""
+  BUDGET_ESTIMATE=""
+  BUDGET_MAX=""
+  BUDGET_RESET=""
+  if [ -f "$STATE_FILE" ]; then
+    if command -v jq >/dev/null 2>&1; then
+      BUDGET_MODE="$(jq -r '.budget_mode // empty' "$STATE_FILE" 2>/dev/null)" || BUDGET_MODE=""
+      BUDGET_ESTIMATE="$(jq -r '.daily_token_estimate // empty' "$STATE_FILE" 2>/dev/null)" || BUDGET_ESTIMATE=""
+      BUDGET_MAX="$(jq -r '.max_daily_tokens // empty' "$STATE_FILE" 2>/dev/null)" || BUDGET_MAX=""
+      BUDGET_RESET="$(jq -r '.daily_reset_date // empty' "$STATE_FILE" 2>/dev/null)" || BUDGET_RESET=""
+    elif command -v python3 >/dev/null 2>&1; then
+      BUDGET_MODE="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('budget_mode',''))" 2>/dev/null)" || BUDGET_MODE=""
+      BUDGET_ESTIMATE="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('daily_token_estimate',''))" 2>/dev/null)" || BUDGET_ESTIMATE=""
+      BUDGET_MAX="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('max_daily_tokens',''))" 2>/dev/null)" || BUDGET_MAX=""
+      BUDGET_RESET="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('daily_reset_date',''))" 2>/dev/null)" || BUDGET_RESET=""
+    fi
+  fi
+
   if [ -n "$JSON_OUTPUT" ]; then
     PANE_PID="$(tmux display-message -t "$SESSION_NAME" -p '#{pane_pid}')"
     PANE_DEAD="$(tmux display-message -t "$SESSION_NAME" -p '#{pane_dead}')"
@@ -158,10 +178,30 @@ do_health() {
     PANE_PID="${PANE_PID:-0}"
     PANE_DEAD="${PANE_DEAD:-0}"
     WINDOW_ACTIVE="${WINDOW_ACTIVE:-0}"
-    printf '{"running":true,"session":"%s","pane_pid":%s,"pane_dead":%s,"window_active":%s}\n' \
-      "$SESSION_NAME" "$PANE_PID" "$PANE_DEAD" "$WINDOW_ACTIVE"
+    if [ -n "$BUDGET_MODE" ]; then
+      BUDGET_PCT=0
+      if [ -n "$BUDGET_MAX" ] && [ "$BUDGET_MAX" -gt 0 ] 2>/dev/null; then
+        BUDGET_PCT=$(( (${BUDGET_ESTIMATE:-0} * 100) / BUDGET_MAX ))
+      fi
+      printf '{"running":true,"session":"%s","pane_pid":%s,"pane_dead":%s,"window_active":%s,"budget_mode":"%s","daily_token_estimate":%s,"max_daily_tokens":%s,"budget_pct":%s,"daily_reset_date":"%s"}\n' \
+        "$SESSION_NAME" "$PANE_PID" "$PANE_DEAD" "$WINDOW_ACTIVE" \
+        "$BUDGET_MODE" "${BUDGET_ESTIMATE:-0}" "${BUDGET_MAX:-0}" "$BUDGET_PCT" "${BUDGET_RESET:-null}"
+    else
+      printf '{"running":true,"session":"%s","pane_pid":%s,"pane_dead":%s,"window_active":%s}\n' \
+        "$SESSION_NAME" "$PANE_PID" "$PANE_DEAD" "$WINDOW_ACTIVE"
+    fi
   else
     tmux display-message -t "$SESSION_NAME" -p "#{session_name}: pane_pid=#{pane_pid} pane_dead=#{pane_dead} window_active=#{window_active}"
+    if [ -n "$BUDGET_MODE" ]; then
+      BUDGET_PCT=0
+      if [ -n "$BUDGET_MAX" ] && [ "$BUDGET_MAX" -gt 0 ] 2>/dev/null; then
+        BUDGET_PCT=$(( (${BUDGET_ESTIMATE:-0} * 100) / BUDGET_MAX ))
+      fi
+      printf '  budget: %s (%s/%s tokens, %s%%)\n' "$BUDGET_MODE" "${BUDGET_ESTIMATE:-0}" "${BUDGET_MAX:-0}" "$BUDGET_PCT"
+      printf '  reset date: %s\n' "${BUDGET_RESET:-not set}"
+    else
+      printf '  budget tracking: not configured\n'
+    fi
   fi
   exit 0
 }

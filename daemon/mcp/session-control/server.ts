@@ -6,6 +6,8 @@
  * (clear context, compact context) via tmux send-keys.
  */
 
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
@@ -15,6 +17,7 @@ import {
 
 const AGENT_NAME = process.env.CLAWDKIT_AGENT_NAME ?? 'clawdkit'
 const SESSION_NAME = `clawdkit-${AGENT_NAME}`
+const INSTANCE_DIR = process.env.CLAWDKIT_INSTANCE_DIR ?? join(process.env.HOME ?? '', '.clawdcode', AGENT_NAME)
 
 /** Send keystrokes to our own tmux session. */
 async function tmuxSendKeys(keys: string): Promise<void> {
@@ -76,6 +79,13 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         },
       },
     },
+    {
+      name: 'get_budget_status',
+      description:
+        'Query current daily token budget status. Returns budget mode, token estimate, ' +
+        'max daily tokens, percentage used, and reset date. Read-only — does not modify state.',
+      inputSchema: { type: 'object' as const, properties: {} },
+    },
   ],
 }))
 
@@ -92,6 +102,40 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
       const cmd = instructions ? `/compact ${instructions}` : '/compact'
       await tmuxSendKeys(cmd)
       return { content: [{ type: 'text', text: 'Context compaction triggered.' }] }
+    }
+    case 'get_budget_status': {
+      const statePath = join(INSTANCE_DIR, '.clawdkit', 'state.json')
+      try {
+        const raw = await readFile(statePath, 'utf-8')
+        const state = JSON.parse(raw) as Record<string, unknown>
+
+        const estimate = (state.daily_token_estimate as number) ?? null
+        const max = (state.max_daily_tokens as number) ?? null
+        const mode = (state.budget_mode as string) ?? null
+        const threshold = (state.low_fuel_threshold_pct as number) ?? null
+        const resetDate = (state.daily_reset_date as string) ?? null
+
+        if (estimate === null || max === null) {
+          return {
+            content: [{ type: 'text', text: 'Budget tracking not configured — budget fields missing from state.json.' }],
+          }
+        }
+
+        const pct = max > 0 ? Math.round((estimate / max) * 100) : 0
+        const lines = [
+          `Budget mode: ${mode ?? 'unknown'}`,
+          `Usage: ${estimate.toLocaleString()} / ${max.toLocaleString()} tokens (${pct}%)`,
+          `Low-fuel threshold: ${threshold ?? 80}%`,
+          `Reset date: ${resetDate ?? 'not set'}`,
+        ]
+        return { content: [{ type: 'text', text: lines.join('\n') }] }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        return {
+          isError: true,
+          content: [{ type: 'text', text: `Failed to read budget status: ${msg}` }],
+        }
+      }
     }
     default:
       throw new Error(`Unknown tool: ${name}`)
