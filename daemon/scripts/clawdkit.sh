@@ -153,20 +153,20 @@ do_health() {
   # Read budget status from state.json
   STATE_FILE="${INSTANCE_DIR}/.clawdkit/state.json"
   BUDGET_MODE=""
-  BUDGET_ESTIMATE=""
-  BUDGET_MAX=""
-  BUDGET_RESET=""
+  FIVE_HOUR_PCT=""
+  SEVEN_DAY_PCT=""
+  USAGE_UPDATED=""
   if [ -f "$STATE_FILE" ]; then
     if command -v jq >/dev/null 2>&1; then
       BUDGET_MODE="$(jq -r '.budget_mode // empty' "$STATE_FILE" 2>/dev/null)" || BUDGET_MODE=""
-      BUDGET_ESTIMATE="$(jq -r '.daily_token_estimate // empty' "$STATE_FILE" 2>/dev/null)" || BUDGET_ESTIMATE=""
-      BUDGET_MAX="$(jq -r '.max_daily_tokens // empty' "$STATE_FILE" 2>/dev/null)" || BUDGET_MAX=""
-      BUDGET_RESET="$(jq -r '.daily_reset_date // empty' "$STATE_FILE" 2>/dev/null)" || BUDGET_RESET=""
+      FIVE_HOUR_PCT="$(jq -r '.five_hour_used_pct // empty' "$STATE_FILE" 2>/dev/null)" || FIVE_HOUR_PCT=""
+      SEVEN_DAY_PCT="$(jq -r '.seven_day_used_pct // empty' "$STATE_FILE" 2>/dev/null)" || SEVEN_DAY_PCT=""
+      USAGE_UPDATED="$(jq -r '.usage_updated_at // empty' "$STATE_FILE" 2>/dev/null)" || USAGE_UPDATED=""
     elif command -v python3 >/dev/null 2>&1; then
       BUDGET_MODE="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('budget_mode',''))" 2>/dev/null)" || BUDGET_MODE=""
-      BUDGET_ESTIMATE="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('daily_token_estimate',''))" 2>/dev/null)" || BUDGET_ESTIMATE=""
-      BUDGET_MAX="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('max_daily_tokens',''))" 2>/dev/null)" || BUDGET_MAX=""
-      BUDGET_RESET="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('daily_reset_date',''))" 2>/dev/null)" || BUDGET_RESET=""
+      FIVE_HOUR_PCT="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('five_hour_used_pct',''))" 2>/dev/null)" || FIVE_HOUR_PCT=""
+      SEVEN_DAY_PCT="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('seven_day_used_pct',''))" 2>/dev/null)" || SEVEN_DAY_PCT=""
+      USAGE_UPDATED="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('usage_updated_at',''))" 2>/dev/null)" || USAGE_UPDATED=""
     fi
   fi
 
@@ -179,26 +179,26 @@ do_health() {
     PANE_DEAD="${PANE_DEAD:-0}"
     WINDOW_ACTIVE="${WINDOW_ACTIVE:-0}"
     if [ -n "$BUDGET_MODE" ]; then
-      BUDGET_PCT=0
-      if [ -n "$BUDGET_MAX" ] && [ "$BUDGET_MAX" -gt 0 ] 2>/dev/null; then
-        BUDGET_PCT=$(( (${BUDGET_ESTIMATE:-0} * 100) / BUDGET_MAX ))
-      fi
-      printf '{"running":true,"session":"%s","pane_pid":%s,"pane_dead":%s,"window_active":%s,"budget_mode":"%s","daily_token_estimate":%s,"max_daily_tokens":%s,"budget_pct":%s,"daily_reset_date":"%s"}\n' \
+      printf '{"running":true,"session":"%s","pane_pid":%s,"pane_dead":%s,"window_active":%s,"budget_mode":"%s","five_hour_used_pct":%s,"seven_day_used_pct":%s}\n' \
         "$SESSION_NAME" "$PANE_PID" "$PANE_DEAD" "$WINDOW_ACTIVE" \
-        "$BUDGET_MODE" "${BUDGET_ESTIMATE:-0}" "${BUDGET_MAX:-0}" "$BUDGET_PCT" "${BUDGET_RESET:-null}"
+        "$BUDGET_MODE" "${FIVE_HOUR_PCT:-null}" "${SEVEN_DAY_PCT:-null}"
     else
       printf '{"running":true,"session":"%s","pane_pid":%s,"pane_dead":%s,"window_active":%s}\n' \
         "$SESSION_NAME" "$PANE_PID" "$PANE_DEAD" "$WINDOW_ACTIVE"
     fi
   else
     tmux display-message -t "$SESSION_NAME" -p "#{session_name}: pane_pid=#{pane_pid} pane_dead=#{pane_dead} window_active=#{window_active}"
-    if [ -n "$BUDGET_MODE" ]; then
-      BUDGET_PCT=0
-      if [ -n "$BUDGET_MAX" ] && [ "$BUDGET_MAX" -gt 0 ] 2>/dev/null; then
-        BUDGET_PCT=$(( (${BUDGET_ESTIMATE:-0} * 100) / BUDGET_MAX ))
+    if [ -n "$FIVE_HOUR_PCT" ] && [ "$FIVE_HOUR_PCT" != "null" ]; then
+      printf '  budget: %s | 5h: %s%%' "${BUDGET_MODE:-normal}" "$FIVE_HOUR_PCT"
+      if [ -n "$SEVEN_DAY_PCT" ] && [ "$SEVEN_DAY_PCT" != "null" ]; then
+        printf ' | 7d: %s%%' "$SEVEN_DAY_PCT"
       fi
-      printf '  budget: %s (%s/%s tokens, %s%%)\n' "$BUDGET_MODE" "${BUDGET_ESTIMATE:-0}" "${BUDGET_MAX:-0}" "$BUDGET_PCT"
-      printf '  reset date: %s\n' "${BUDGET_RESET:-not set}"
+      printf '\n'
+      if [ -n "$USAGE_UPDATED" ]; then
+        printf '  last update: %s\n' "$USAGE_UPDATED"
+      fi
+    elif [ -n "$BUDGET_MODE" ]; then
+      printf '  budget: %s (rate limit data not yet available)\n' "$BUDGET_MODE"
     else
       printf '  budget tracking: not configured\n'
     fi
