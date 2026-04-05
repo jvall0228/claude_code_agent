@@ -32,63 +32,64 @@ When a heartbeat event arrives (via MCP tool call or file trigger):
 1. **Budget check first** — run the Usage Budget Protocol (below) before any task work. If budget mode is `exhausted`, skip all proactive tasks and compact context.
 2. Read `{{INSTANCE_DIR}}/prompts/HEARTBEAT.md` for the current task list.
 3. Work through tasks in priority order. Complete one atomic unit of work per heartbeat if tasks are long-running. In `low-fuel` mode, skip proactive tasks and log what was skipped.
-4. **Estimate tokens used** — after completing work, estimate tokens consumed (input + output characters / 4) and add to `daily_token_estimate` in state.json.
-5. Update `{{INSTANCE_DIR}}/.clawdkit/state.json` after each task: set `last_heartbeat`, `active_task`, `queue`, and updated budget fields.
-6. Log significant actions to `{{INSTANCE_DIR}}/.clawdkit/progress.log` with ISO-8601 timestamp.
-7. If a task requires user input, send a message via `{{NOTIFICATION_CHANNEL}}` and set task status to `waiting`.
+4. Update `{{INSTANCE_DIR}}/.clawdkit/state.json` after each task: set `last_heartbeat`, `active_task`, `queue`, and `budget_mode`.
+5. Log significant actions to `{{INSTANCE_DIR}}/.clawdkit/progress.log` with ISO-8601 timestamp.
+6. If a task requires user input, send a message via `{{NOTIFICATION_CHANNEL}}` and set task status to `waiting`.
 
 ## Usage Budget Protocol
 
-The daemon operates within a daily token budget to leave headroom for interactive sessions. Budget state lives in `state.json` alongside session state.
+The daemon tracks real token consumption via Claude Code's status line integration. A status line script (`statusline.sh`) runs after every assistant message and writes actual rate limit data from Anthropic to `state.json`. The agent reads this data to decide its operating mode.
 
-### Budget Fields
+### Rate Limit Fields (written by statusline.sh)
+
+| Field | Description |
+|---|---|
+| `five_hour_used_pct` | Percentage of 5-hour rolling rate limit consumed (from Anthropic) |
+| `five_hour_resets_at` | Unix epoch when the 5-hour window resets |
+| `seven_day_used_pct` | Percentage of 7-day rolling rate limit consumed |
+| `seven_day_resets_at` | Unix epoch when the 7-day window resets |
+| `session_input_tokens` | Cumulative input tokens this session |
+| `session_output_tokens` | Cumulative output tokens this session |
+| `session_cost_usd` | Cumulative session cost in USD |
+| `usage_updated_at` | ISO-8601 timestamp of last status line update |
+
+### Budget Config Fields
 
 | Field | Default | Description |
 |---|---|---|
-| `daily_token_estimate` | 0 | Running estimate of tokens consumed today |
-| `daily_reset_date` | null | Date (YYYY-MM-DD, local timezone) of last reset |
-| `max_daily_tokens` | 150000 | Hard cap — daemon stops proactive work at this limit |
-| `low_fuel_threshold_pct` | 80 | Percentage of max at which low-fuel mode activates |
 | `budget_mode` | "normal" | Current mode: `normal`, `low-fuel`, or `exhausted` |
-
-### Daily Reset
-
-On each heartbeat or message, check `daily_reset_date` against today's date (`YYYY-MM-DD`, local timezone). If they differ:
-
-1. Set `daily_token_estimate` to 0.
-2. Set `budget_mode` to `normal`.
-3. Set `daily_reset_date` to today.
-4. Log: `daily budget reset — new day detected`.
+| `low_fuel_threshold_pct` | 80 | 5-hour usage % at which low-fuel mode activates |
+| `exhausted_threshold_pct` | 95 | 5-hour usage % at which exhausted mode activates |
 
 ### Budget Modes
 
-**normal** — `daily_token_estimate` < `low_fuel_threshold_pct`% of `max_daily_tokens`
+On each heartbeat, read `five_hour_used_pct` from `state.json` and update `budget_mode`:
+
+**normal** — `five_hour_used_pct` < `low_fuel_threshold_pct`
 - Process heartbeat tasks and messages normally.
 
-**low-fuel** — `daily_token_estimate` >= `low_fuel_threshold_pct`% of `max_daily_tokens`
-- Skip proactive heartbeat tasks (GitHub checks, housekeeping). Log what was skipped.
+**low-fuel** — `five_hour_used_pct` >= `low_fuel_threshold_pct`
+- Skip proactive heartbeat tasks (GitHub checks, housekeeping, todo work). Log what was skipped.
 - Still process inbound messages — never ignore the user.
 - Prefer compact, token-efficient responses.
-- Log: `entering low-fuel mode — <estimate>/<max> tokens (<pct>%)`.
+- Log: `entering low-fuel mode — 5h usage at <pct>%`.
 
-**exhausted** — `daily_token_estimate` >= `max_daily_tokens`
+**exhausted** — `five_hour_used_pct` >= `exhausted_threshold_pct`
 - Do not process any proactive heartbeat tasks.
-- If woken by an inbound message: respond to it, warn the user that the daily budget is exhausted and recommend using an interactive session, then stop.
-- Compact context and wait for daily reset.
-- Log: `budget exhausted — <estimate>/<max> tokens`.
-- Note: `heartbeat.sh` also gates at this level — if `budget_mode` is `exhausted` (and it's still today), the heartbeat POST is skipped entirely, so the agent won't even wake up.
+- If woken by an inbound message: respond to it, warn the user that the rate limit is nearly exhausted and recommend using an interactive session, then stop.
+- Compact context and wait for the rate limit window to reset.
+- Log: `budget exhausted — 5h usage at <pct>%`.
+- Note: `heartbeat.sh` also gates at this level — if `five_hour_used_pct` >= `exhausted_threshold_pct` or `budget_mode` is `exhausted`, the heartbeat POST is skipped entirely.
 
-### Token Estimation
+### Mode Transitions
 
-After each unit of work (heartbeat task, message exchange), estimate tokens consumed:
-
-- **Formula:** `(input_chars + output_chars) / 4`
-- This is a rough estimate — accuracy is not critical. The thresholds are conservative.
-- Add the estimate to `daily_token_estimate` and write state.json.
+- Modes can go up (normal → low-fuel → exhausted) or down (exhausted → normal) as the rolling window moves.
+- When `five_hour_used_pct` drops below `low_fuel_threshold_pct`, set `budget_mode` back to `normal`.
+- If `five_hour_used_pct` is null (status line hasn't run yet or not a subscriber), default to `normal` and proceed.
 
 ### Backward Compatibility
 
-On startup or first heartbeat, if any budget field is missing from `state.json`, initialize it with the default value from the table above. Log: `initialized missing budget field: <field_name>`.
+On startup or first heartbeat, if rate limit fields are missing from `state.json`, proceed in `normal` mode. The status line script will populate them after the first assistant message.
 
 ## Messaging Protocol
 
@@ -98,7 +99,7 @@ When an inbound message arrives via `{{NOTIFICATION_CHANNEL}}`:
 2. Execute or queue the requested work.
 3. Respond via the same channel tool used to receive the message.
 4. Log the exchange to `progress.log`.
-5. **Budget awareness** — if `budget_mode` is `exhausted`, process the current message but include a note that the daily budget is exhausted and recommend using an interactive session for further work.
+5. **Budget awareness** — if `budget_mode` is `exhausted`, process the current message but include a note that the 5-hour rate limit is nearly exhausted and recommend using an interactive session for further work.
 
 Keep responses concise. No filler. Prefer structured output (lists, brief summaries).
 

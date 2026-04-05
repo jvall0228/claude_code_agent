@@ -81,40 +81,41 @@ log "heartbeat started"
 # Ensure lock is removed on clean exit (SIGKILL will bypass this)
 trap 'remove_lock; log "heartbeat finished"' EXIT
 
-# 3. Budget gate — skip heartbeat POST when daily budget is exhausted
+# 3. Budget gate — skip heartbeat POST when rate limit usage is too high
 STATE_FILE="${INSTANCE_DIR}/.clawdkit/state.json"
 BUDGET_SKIP=""
 if [ -f "$STATE_FILE" ]; then
   # Extract budget fields via jq or python3 fallback
   if command -v jq >/dev/null 2>&1; then
     BUDGET_MODE="$(jq -r '.budget_mode // empty' "$STATE_FILE" 2>/dev/null)" || BUDGET_MODE=""
-    DAILY_ESTIMATE="$(jq -r '.daily_token_estimate // empty' "$STATE_FILE" 2>/dev/null)" || DAILY_ESTIMATE=""
-    MAX_DAILY="$(jq -r '.max_daily_tokens // empty' "$STATE_FILE" 2>/dev/null)" || MAX_DAILY=""
-    RESET_DATE="$(jq -r '.daily_reset_date // empty' "$STATE_FILE" 2>/dev/null)" || RESET_DATE=""
+    FIVE_HOUR_PCT="$(jq -r '.five_hour_used_pct // empty' "$STATE_FILE" 2>/dev/null)" || FIVE_HOUR_PCT=""
+    EXHAUSTED_PCT="$(jq -r '.exhausted_threshold_pct // empty' "$STATE_FILE" 2>/dev/null)" || EXHAUSTED_PCT=""
   elif command -v python3 >/dev/null 2>&1; then
-    BUDGET_MODE="$(python3 -c "import json,sys; d=json.load(open('$STATE_FILE')); print(d.get('budget_mode',''))" 2>/dev/null)" || BUDGET_MODE=""
-    DAILY_ESTIMATE="$(python3 -c "import json,sys; d=json.load(open('$STATE_FILE')); print(d.get('daily_token_estimate',''))" 2>/dev/null)" || DAILY_ESTIMATE=""
-    MAX_DAILY="$(python3 -c "import json,sys; d=json.load(open('$STATE_FILE')); print(d.get('max_daily_tokens',''))" 2>/dev/null)" || MAX_DAILY=""
-    RESET_DATE="$(python3 -c "import json,sys; d=json.load(open('$STATE_FILE')); print(d.get('daily_reset_date',''))" 2>/dev/null)" || RESET_DATE=""
+    BUDGET_MODE="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('budget_mode',''))" 2>/dev/null)" || BUDGET_MODE=""
+    FIVE_HOUR_PCT="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('five_hour_used_pct',''))" 2>/dev/null)" || FIVE_HOUR_PCT=""
+    EXHAUSTED_PCT="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('exhausted_threshold_pct',''))" 2>/dev/null)" || EXHAUSTED_PCT=""
   else
     log "WARNING: neither jq nor python3 available — skipping budget check (fail-open)"
   fi
 
-  # Allow heartbeat through if it's a new day (agent handles the reset)
-  TODAY="$(date +%Y-%m-%d)"
-  if [ -n "$BUDGET_MODE" ] && [ "$RESET_DATE" = "$TODAY" ]; then
-    if [ "$BUDGET_MODE" = "exhausted" ]; then
-      BUDGET_SKIP="budget_mode is exhausted"
-    elif [ -n "$DAILY_ESTIMATE" ] && [ -n "$MAX_DAILY" ] && [ "$MAX_DAILY" -gt 0 ] 2>/dev/null; then
-      if [ "$DAILY_ESTIMATE" -ge "$MAX_DAILY" ]; then
-        BUDGET_SKIP="daily_token_estimate ($DAILY_ESTIMATE) >= max_daily_tokens ($MAX_DAILY)"
-      fi
+  # Gate 1: budget_mode explicitly set to exhausted by the agent
+  if [ "$BUDGET_MODE" = "exhausted" ]; then
+    BUDGET_SKIP="budget_mode is exhausted"
+  fi
+
+  # Gate 2: 5-hour rate limit exceeds exhausted threshold (default 95%)
+  if [ -z "$BUDGET_SKIP" ] && [ -n "$FIVE_HOUR_PCT" ] && [ "$FIVE_HOUR_PCT" != "null" ]; then
+    THRESHOLD="${EXHAUSTED_PCT:-95}"
+    # Compare as integers (truncate decimals)
+    FIVE_HOUR_INT="${FIVE_HOUR_PCT%%.*}"
+    if [ -n "$FIVE_HOUR_INT" ] && [ "$FIVE_HOUR_INT" -ge "$THRESHOLD" ] 2>/dev/null; then
+      BUDGET_SKIP="5h rate limit at ${FIVE_HOUR_PCT}% (threshold: ${THRESHOLD}%)"
     fi
   fi
 fi
 
 if [ -n "$BUDGET_SKIP" ]; then
-  log "budget exhausted — skipping heartbeat POST ($BUDGET_SKIP)"
+  log "budget gate — skipping heartbeat POST ($BUDGET_SKIP)"
   exit 0
 fi
 
