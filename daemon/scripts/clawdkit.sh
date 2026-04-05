@@ -3,10 +3,12 @@
 # Subcommands: start | stop | restart | status | health | install | uninstall
 # Flag: --instance <name>  (default: clawdkit)
 # Flag: --json             (machine-readable output for health)
+# Flag: --debug            (enable debug channels like fakechat)
 #
 # Usage:
-#   clawdkit.sh [--instance <name>] [--json] <subcommand>
+#   clawdkit.sh [--instance <name>] [--json] [--debug] <subcommand>
 #   clawdkit.sh start
+#   clawdkit.sh --debug start
 #   clawdkit.sh stop --instance myagent
 #   clawdkit.sh health --json
 
@@ -17,6 +19,7 @@ set -e
 # ---------------------------------------------------------------------------
 INSTANCE="clawdkit"
 JSON_OUTPUT=""
+DEBUG_MODE=""
 CLAWDCODE_ROOT="${HOME}/.clawdcode"
 HEARTBEAT_PORT="${CLAWDKIT_HEARTBEAT_PORT:-7749}"
 
@@ -44,7 +47,10 @@ while [ $# -gt 0 ]; do
     --json)
       JSON_OUTPUT=1
       ;;
-    start|stop|restart|status|health|install|uninstall)
+    --debug)
+      DEBUG_MODE=1
+      ;;
+    start|stop|restart|status|health|clear|install|uninstall)
       SUBCOMMAND="$1"
       ;;
     *)
@@ -56,7 +62,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$SUBCOMMAND" ]; then
-  printf 'Usage: clawdkit.sh [--instance <name>] [--json] <start|stop|restart|status|health|install|uninstall>\n' >&2
+  printf 'Usage: clawdkit.sh [--instance <name>] [--json] [--debug] <start|stop|restart|status|health|clear|install|uninstall>\n' >&2
   exit 1
 fi
 
@@ -98,6 +104,7 @@ do_start() {
   export CLAWDKIT_SCRIPTS_PATH="$CLAWDKIT_SCRIPTS_PATH"
   export CLAWDKIT_MCP_HEARTBEAT="$MCP_HEARTBEAT"
   export CLAWDKIT_HEARTBEAT_PORT="$HEARTBEAT_PORT"
+  export CLAWDKIT_DEBUG="${DEBUG_MODE:-0}"
 
   # Create detached tmux session; set remain-on-exit so pane stays after crash
   tmux new-session -d -s "$SESSION_NAME" \
@@ -106,6 +113,10 @@ do_start() {
 
   # Keep the window around after the command exits (lets us inspect output)
   tmux set-option -t "$SESSION_NAME" remain-on-exit on
+
+  # Auto-confirm the dev channels prompt after claude starts
+  # Claude Code uses raw tty input, so we send Enter via tmux after a delay
+  (sleep 20 && tmux send-keys -t "$SESSION_NAME" Enter) &
 
   printf 'clawdkit: session %s started\n' "$SESSION_NAME"
 }
@@ -153,6 +164,16 @@ do_health() {
     tmux display-message -t "$SESSION_NAME" -p "#{session_name}: pane_pid=#{pane_pid} pane_dead=#{pane_dead} window_active=#{window_active}"
   fi
   exit 0
+}
+
+do_clear() {
+  if ! session_exists; then
+    printf 'clawdkit: no session named %s\n' "$SESSION_NAME" >&2
+    exit 1
+  fi
+  printf 'clawdkit: sending /clear to %s\n' "$SESSION_NAME"
+  tmux send-keys -t "$SESSION_NAME" "/clear" Enter
+  printf 'clawdkit: context window cleared for %s\n' "$SESSION_NAME"
 }
 
 do_install() {
@@ -254,6 +275,7 @@ case "$SUBCOMMAND" in
   restart) do_stop; do_start ;;
   status)  do_status ;;
   health)  do_health ;;
+  clear)   do_clear ;;
   install)   do_install ;;
   uninstall) do_uninstall ;;
 esac

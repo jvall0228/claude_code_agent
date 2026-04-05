@@ -75,8 +75,8 @@ esac
 
 # Validate channel
 case "$CHANNEL" in
-  telegram|imessage) ;;
-  *) printf 'bootstrap.sh: invalid channel "%s" — must be telegram or imessage\n' "$CHANNEL" >&2; exit 1 ;;
+  telegram|imessage|fakechat) ;;
+  *) printf 'bootstrap.sh: invalid channel "%s" — must be telegram, imessage, or fakechat\n' "$CHANNEL" >&2; exit 1 ;;
 esac
 
 # Warn if iMessage selected on non-Darwin
@@ -208,7 +208,48 @@ if [ ! -f "$MCP_SRC" ]; then
   exit 1
 fi
 MCP_DIR="${DAEMON_DIR}/mcp/heartbeat"
-sed "s|{{HEARTBEAT_MCP_PATH}}|${MCP_DIR}|g" "$MCP_SRC" > "$MCP_DEST"
+sed \
+  -e "s|{{HEARTBEAT_MCP_PATH}}|${MCP_DIR}|g" \
+  -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
+  "$MCP_SRC" > "$MCP_DEST"
+
+# ---------------------------------------------------------------------------
+# Stamp .mcp.json from template (includes all daemon MCP servers)
+# ---------------------------------------------------------------------------
+MCP_JSON_TEMPLATE="${DAEMON_DIR}/templates/.mcp.json.template"
+if [ ! -f "$MCP_JSON_TEMPLATE" ]; then
+  printf 'bootstrap.sh: .mcp.json template not found at %s\n' "$MCP_JSON_TEMPLATE" >&2
+  exit 1
+fi
+
+SESSION_CONTROL_DIR="${DAEMON_DIR}/mcp/session-control"
+sed \
+  -e "s|{{HEARTBEAT_MCP_PATH}}|${MCP_DIR}|g" \
+  -e "s|{{SESSION_CONTROL_MCP_PATH}}|${SESSION_CONTROL_DIR}|g" \
+  -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
+  "$MCP_JSON_TEMPLATE" > "${INSTANCE_DIR}/.mcp.json"
+
+# ---------------------------------------------------------------------------
+# Create channel MCP config for fakechat
+# ---------------------------------------------------------------------------
+if [ "$CHANNEL" = "fakechat" ]; then
+  FAKECHAT_PLUGIN_ROOT="${HOME}/.claude/plugins/cache/claude-plugins-official/fakechat/0.0.1"
+  if [ -d "$FAKECHAT_PLUGIN_ROOT" ]; then
+    cat > "${INSTANCE_DIR}/.mcp-fakechat.json" <<EOF
+{
+  "mcpServers": {
+    "fakechat": {
+      "command": "bun",
+      "args": ["run", "--cwd", "${FAKECHAT_PLUGIN_ROOT}", "--shell=bun", "--silent", "start"]
+    }
+  }
+}
+EOF
+    printf 'bootstrap.sh: fakechat MCP config written to %s/.mcp-fakechat.json\n' "$INSTANCE_DIR" >&2
+  else
+    printf 'bootstrap.sh: WARNING: fakechat plugin not found at %s — install it first\n' "$FAKECHAT_PLUGIN_ROOT" >&2
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # Install scheduler
@@ -226,16 +267,20 @@ printf '\n' >&2
 printf '✓ Daemon instance %s created at %s\n' "$AGENT_NAME" "$INSTANCE_DIR" >&2
 printf '\n' >&2
 printf 'Next steps:\n' >&2
-printf '1. Install channel plugins:\n' >&2
-printf '   - Telegram: /plugin install claude-telegram@claude-plugins-official\n' >&2
-printf '   - iMessage: /plugin install claude-imessage@claude-plugins-official  (macOS only)\n' >&2
-printf '\n' >&2
-printf '2. Configure channel credentials (follow plugin setup instructions)\n' >&2
-printf '\n' >&2
-printf '3. Copy the channel .mcp.json file to your instance dir:\n' >&2
-printf '   %s/.mcp-telegram.json   (Telegram)\n' "$INSTANCE_DIR" >&2
-printf '   %s/.mcp-imessage.json   (iMessage)\n' "$INSTANCE_DIR" >&2
-printf '\n' >&2
+if [ "$CHANNEL" = "fakechat" ]; then
+  printf '1. fakechat MCP config already written — no additional plugin setup needed.\n' >&2
+else
+  printf '1. Install channel plugins:\n' >&2
+  printf '   - Telegram: /plugin install claude-telegram@claude-plugins-official\n' >&2
+  printf '   - iMessage: /plugin install claude-imessage@claude-plugins-official  (macOS only)\n' >&2
+  printf '\n' >&2
+  printf '2. Configure channel credentials (follow plugin setup instructions)\n' >&2
+  printf '\n' >&2
+  printf '3. Copy the channel .mcp.json file to your instance dir:\n' >&2
+  printf '   %s/.mcp-telegram.json   (Telegram)\n' "$INSTANCE_DIR" >&2
+  printf '   %s/.mcp-imessage.json   (iMessage)\n' "$INSTANCE_DIR" >&2
+  printf '\n' >&2
+fi
 printf '4. Start the daemon:\n' >&2
 printf '   %s/clawdkit.sh --instance %s start\n' "$SCRIPTS_PATH" "$AGENT_NAME" >&2
 printf '\n' >&2

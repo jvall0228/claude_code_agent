@@ -8,6 +8,7 @@
 #   CLAWDKIT_INSTANCE_DIR — path to ~/.clawdcode/<agent_name>/
 #   CLAWDKIT_SCRIPTS_PATH — path to daemon/scripts/
 #   CLAWDKIT_MCP_HEARTBEAT — path to daemon/mcp/heartbeat/.mcp.json
+#   CLAWDKIT_DEBUG         — set to 1 to enable debug channels (fakechat)
 
 set -e
 
@@ -28,25 +29,44 @@ if [ ! -d "$INSTANCE_DIR" ]; then
 fi
 
 # Build argument list safely — no eval, handles paths with spaces
-set -- --dangerously-load-development-channels
+# Channel servers are defined in $INSTANCE_DIR/.mcp.json (Claude picks them up automatically).
+# --dangerously-load-development-channels tags custom dev channels by name from .mcp.json.
+# --channels enables approved plugin channels.
+DEV_CHANNELS=""
+APPROVED_CHANNELS=""
 
-# Heartbeat MCP channel (always)
-if [ -n "$MCP_HEARTBEAT" ] && [ -f "$MCP_HEARTBEAT" ]; then
-  set -- "$@" "$MCP_HEARTBEAT"
-fi
+# Heartbeat — custom dev channel, defined in .mcp.json
+DEV_CHANNELS="$DEV_CHANNELS server:clawdkit-heartbeat"
 
-# Telegram channel config (instance dir)
+# Telegram — approved plugin channel
 TELEGRAM_MCP="${INSTANCE_DIR}/.mcp-telegram.json"
 if [ -f "$TELEGRAM_MCP" ]; then
-  set -- "$@" "$TELEGRAM_MCP"
+  APPROVED_CHANNELS="$APPROVED_CHANNELS plugin:telegram@claude-plugins-official"
 fi
 
-# iMessage channel — macOS only
+# Fakechat — debug-only channel, gated behind CLAWDKIT_DEBUG
+if [ "${CLAWDKIT_DEBUG:-0}" = "1" ]; then
+  FAKECHAT_MCP="${INSTANCE_DIR}/.mcp-fakechat.json"
+  if [ -f "$FAKECHAT_MCP" ]; then
+    APPROVED_CHANNELS="$APPROVED_CHANNELS plugin:fakechat@claude-plugins-official"
+  fi
+fi
+
+# iMessage — macOS only, approved plugin channel
 if [ "$OS" = "Darwin" ]; then
   IMESSAGE_MCP="${INSTANCE_DIR}/.mcp-imessage.json"
   if [ -f "$IMESSAGE_MCP" ]; then
-    set -- "$@" "$IMESSAGE_MCP"
+    APPROVED_CHANNELS="$APPROVED_CHANNELS plugin:imessage@claude-plugins-official"
   fi
+fi
+
+# Assemble final argument list
+set -- --dangerously-skip-permissions --remote-control "$AGENT_NAME"
+if [ -n "$DEV_CHANNELS" ]; then
+  set -- "$@" --dangerously-load-development-channels $DEV_CHANNELS
+fi
+if [ -n "$APPROVED_CHANNELS" ]; then
+  set -- "$@" --channels $APPROVED_CHANNELS
 fi
 
 # Wait for daemon health endpoint to be ready before launching claude

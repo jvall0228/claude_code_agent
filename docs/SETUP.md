@@ -44,18 +44,34 @@ From within Claude Code:
 
 ## Step 2: Configure the Brain
 
-The brain lives at `brain/` in this repo. Customize the persona files before bootstrapping:
+Each agent gets its own brain vault at `~/.agent-brain/<agent_name>/`. Create it from the repo's template:
+
+```sh
+AGENT_NAME=<your_agent_name>
+mkdir -p ~/.agent-brain/${AGENT_NAME}/prompts ~/.agent-brain/${AGENT_NAME}/knowledge
+cp brain/prompts/*.md ~/.agent-brain/${AGENT_NAME}/prompts/
+```
+
+Then customize the prompt files:
 
 | File | What to edit |
 |------|-------------|
-| `brain/prompts/SOUL.md` | Agent's core purpose, values, character |
-| `brain/prompts/IDENTITY.md` | Replace `[OWNER_NAME]`, `[AGENT_NAME]`, `[BRAIN_PATH]` |
-| `brain/prompts/USER.md` | Replace owner details, shared brain path |
-| `brain/prompts/TOOLS.md` | Add MCP servers, update commands if needed |
+| `~/.agent-brain/<name>/prompts/SOUL.md` | Agent's core purpose, values, character |
+| `~/.agent-brain/<name>/prompts/IDENTITY.md` | Replace `[OWNER_NAME]`, `[AGENT_NAME]`, `[BRAIN_PATH]` |
+| `~/.agent-brain/<name>/prompts/USER.md` | Replace owner details, shared brain path |
+| `~/.agent-brain/<name>/prompts/TOOLS.md` | Add MCP servers, update commands if needed |
 
 ---
 
 ## Step 3: Install Channel Plugins
+
+### fakechat (dev/testing, no credentials needed)
+
+```
+/plugin install fakechat@claude-plugins-official
+```
+
+Bootstrap will automatically write `.mcp-fakechat.json` to the instance directory. No additional setup required.
 
 ### Telegram (cross-platform, recommended)
 
