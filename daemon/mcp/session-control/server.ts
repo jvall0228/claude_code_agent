@@ -128,7 +128,7 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
 
-      const reason = (args as Record<string, unknown>)?.reason as string | undefined
+      const reason = (args as Record<string, unknown>)?.reason as string
       const stateFile = join(INSTANCE_DIR, '.clawdkit', 'state.json')
 
       // Write pending_restart to state.json so the new session knows why it restarted.
@@ -149,12 +149,21 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
       // Spawn a detached process that waits then restarts the daemon.
       // The delay gives the MCP response time to be delivered before the session dies.
       const clawdkitSh = join(SCRIPTS_PATH, 'clawdkit.sh')
-      Bun.spawn(['sh', '-c', `sleep 2 && "${clawdkitSh}" --instance "${AGENT_NAME}" restart`], {
-        stdout: 'ignore',
-        stderr: 'ignore',
-        stdin: 'ignore',
-      })
-      // Detach by not awaiting — the process outlives us.
+      try {
+        Bun.spawn(['sh', '-c', `sleep 2 && "${clawdkitSh}" --instance "${AGENT_NAME}" restart`], {
+          stdout: 'ignore',
+          stderr: 'ignore',
+          stdin: 'ignore',
+        })
+        // Not awaited — the process outlives us.
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        process.stderr.write(`clawdkit-session-control: restart spawn failed: ${msg}\n`)
+        return {
+          content: [{ type: 'text', text: `Error: failed to spawn restart process: ${msg}` }],
+          isError: true,
+        }
+      }
 
       process.stderr.write(`clawdkit-session-control: restart_daemon fired (reason: ${reason ?? 'none'})\n`)
 
