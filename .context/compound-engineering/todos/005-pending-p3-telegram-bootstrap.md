@@ -4,6 +4,7 @@ priority: p3
 issue_id: "005"
 tags: [bootstrap, telegram, channels]
 dependencies: ["003"]
+assignee: jarvis
 ---
 
 # Add Telegram to bootstrap step

@@ -4,6 +4,7 @@ priority: p1
 issue_id: "007"
 tags: [architecture, process-management, foundational]
 dependencies: []
+assignee: jaeson
 ---
 
 # Explore alternatives to tmux for process management

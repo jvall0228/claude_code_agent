@@ -4,6 +4,7 @@ priority: p2
 issue_id: "011"
 tags: [daemon, persona, hooks, clear]
 dependencies: []
+assignee: jarvis
 ---
 
 # Handle post-/clear persona file injection

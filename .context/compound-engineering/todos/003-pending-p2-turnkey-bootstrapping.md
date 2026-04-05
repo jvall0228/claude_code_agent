@@ -4,6 +4,7 @@ priority: p2
 issue_id: "003"
 tags: [dx, bootstrap, onboarding]
 dependencies: []
+assignee: jarvis
 ---
 
 # Make bootstrapping more turnkey

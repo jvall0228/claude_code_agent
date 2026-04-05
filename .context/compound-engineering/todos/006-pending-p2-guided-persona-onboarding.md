@@ -4,6 +4,7 @@ priority: p2
 issue_id: "006"
 tags: [onboarding, brain, persona, dx]
 dependencies: ["003"]
+assignee: jarvis
 ---
 
 # Guided persona onboarding conversation

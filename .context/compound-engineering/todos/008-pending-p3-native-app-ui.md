@@ -4,6 +4,7 @@ priority: p3
 issue_id: "008"
 tags: [ui, native, future]
 dependencies: ["002", "007"]
+assignee: jarvis
 ---
 
 # Native app UI

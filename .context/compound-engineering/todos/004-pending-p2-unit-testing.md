@@ -4,6 +4,7 @@ priority: p2
 issue_id: "004"
 tags: [testing, quality]
 dependencies: []
+assignee: jarvis
 ---
 
 # Add unit testing

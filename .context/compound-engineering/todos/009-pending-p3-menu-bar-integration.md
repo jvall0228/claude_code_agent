@@ -4,6 +4,7 @@ priority: p3
 issue_id: "009"
 tags: [ui, macos, future]
 dependencies: ["008"]
+assignee: jarvis
 ---
 
 # Menu bar integration

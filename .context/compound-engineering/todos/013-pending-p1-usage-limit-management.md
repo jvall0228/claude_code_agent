@@ -4,6 +4,7 @@ priority: p1
 issue_id: "013"
 tags: [daemon, limits, oauth, scheduling, cost]
 dependencies: []
+assignee: jarvis
 ---
 
 # Graceful usage limit management for daemon agents

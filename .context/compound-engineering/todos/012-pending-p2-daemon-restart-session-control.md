@@ -4,6 +4,7 @@ priority: p2
 issue_id: "012"
 tags: [daemon, session-control, mcp, tools]
 dependencies: []
+assignee: jarvis
 ---
 
 # Add daemon restart as a session control tool

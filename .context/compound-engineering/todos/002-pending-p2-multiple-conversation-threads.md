@@ -4,6 +4,7 @@ priority: p2
 issue_id: "002"
 tags: [daemon, architecture, threads, tos, ux]
 dependencies: []
+assignee: jarvis
 ---
 
 # Multiple conversation threads per daemon

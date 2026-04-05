@@ -4,6 +4,7 @@ priority: p2
 issue_id: "010"
 tags: [settings, hooks, plugins, persona, dx]
 dependencies: []
+assignee: jaeson
 ---
 
 # Customize project-level settings for daemon and agent-brain

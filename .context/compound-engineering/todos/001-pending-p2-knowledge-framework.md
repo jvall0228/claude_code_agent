@@ -4,6 +4,7 @@ priority: p2
 issue_id: "001"
 tags: [brain, knowledge, architecture]
 dependencies: []
+assignee: jaeson
 ---
 
 # Flesh out the knowledge framework
