@@ -98,12 +98,6 @@ if [ -z "$PROMPT" ]; then
   exit 0
 fi
 
-# Append clear instruction so the agent clears context after processing
-PROMPT="${PROMPT}
-
----
-After completing all tasks above, call the clear_context tool to reset your context window."
-
 # 5. POST to heartbeat MCP (pipe via stdin to safely handle special chars/newlines)
 HTTP_CODE="$(printf '%s' "$PROMPT" | curl -s -o /dev/null -w '%{http_code}' \
   --max-time 5 \

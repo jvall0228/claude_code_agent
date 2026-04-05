@@ -191,11 +191,11 @@ if [ -f "$HEARTBEAT_SRC" ]; then
   cp "$HEARTBEAT_SRC" "$HEARTBEAT_DEST"
 else
   cat > "$HEARTBEAT_DEST" <<'EOF'
-# Heartbeat Tasks
+# Heartbeat
 
-- Check GitHub notifications
-- Review open PRs assigned to me
-- Summarize recent activity from the last 30 minutes
+You've been woken up by a scheduled heartbeat. Check in on your responsibilities proactively — review notifications, monitor open work, and surface anything that needs attention.
+
+When you're done, update `state.json` with the current timestamp and clear your context window using the `clear_context` tool.
 EOF
 fi
 
