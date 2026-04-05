@@ -169,6 +169,7 @@ sed \
 # ---------------------------------------------------------------------------
 cat > "${INSTANCE_DIR}/.clawdkit/state.json" <<EOF
 {
+  "agent_name": "${AGENT_NAME}",
   "last_heartbeat": null,
   "session_started": null,
   "heartbeat_in_progress": false,

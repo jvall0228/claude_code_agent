@@ -87,12 +87,15 @@ if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
   exit 0
 fi
 
-# 4. Read heartbeat prompt
-if [ -f "$HEARTBEAT_FILE" ]; then
-  PROMPT="$(cat "$HEARTBEAT_FILE")"
-else
-  PROMPT="Heartbeat: no HEARTBEAT.md found at ${HEARTBEAT_FILE}. Check status and log."
-  log "WARNING: HEARTBEAT.md not found at ${HEARTBEAT_FILE}"
+# 4. Read heartbeat prompt — only send if the file exists
+if [ ! -f "$HEARTBEAT_FILE" ]; then
+  log "ERROR: HEARTBEAT.md not found at ${HEARTBEAT_FILE} — skipping"
+  exit 0
+fi
+PROMPT="$(cat "$HEARTBEAT_FILE")"
+if [ -z "$PROMPT" ]; then
+  log "ERROR: HEARTBEAT.md is empty — skipping"
+  exit 0
 fi
 
 # 5. POST to heartbeat MCP (pipe via stdin to safely handle special chars/newlines)
@@ -106,6 +109,18 @@ HTTP_CODE="$(printf '%s' "$PROMPT" | curl -s -o /dev/null -w '%{http_code}' \
 
 if [ "$HTTP_CODE" = "200" ]; then
   log "heartbeat sent (HTTP 200)"
+
+  # Wait for the agent to process the heartbeat before clearing context.
+  # This gives the agent time to read the prompt, execute tasks, and log progress.
+  PROCESS_WAIT="${CLAWDKIT_HEARTBEAT_PROCESS_WAIT:-120}"
+  log "waiting ${PROCESS_WAIT}s for agent to process heartbeat"
+  sleep "$PROCESS_WAIT"
+
+  # Clear context so the agent starts fresh for the next heartbeat cycle.
+  # SessionStart hooks will re-inject persona automatically.
+  tmux send-keys -t "$SESSION_NAME" "/clear" Enter 2>/dev/null && \
+    log "context cleared after heartbeat" || \
+    log "WARNING: failed to clear context after heartbeat"
 else
   log "ERROR: heartbeat POST failed (HTTP ${HTTP_CODE}) — is the daemon running?"
 fi
