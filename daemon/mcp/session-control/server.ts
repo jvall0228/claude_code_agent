@@ -18,6 +18,7 @@ import {
 const AGENT_NAME = process.env.CLAWDKIT_AGENT_NAME ?? 'clawdkit'
 const SESSION_NAME = `clawdkit-${AGENT_NAME}`
 const INSTANCE_DIR = process.env.CLAWDKIT_INSTANCE_DIR ?? join(process.env.HOME ?? '', '.clawdcode', AGENT_NAME)
+const SCRIPTS_DIR = join(import.meta.dir, '..', '..', 'scripts')
 
 /** Send keystrokes to our own tmux session. */
 async function tmuxSendKeys(keys: string): Promise<void> {
@@ -51,7 +52,8 @@ const mcp = new Server(
     capabilities: { tools: {} },
     instructions:
       'Session control tools for managing your own Claude Code context window. ' +
-      'Use clear_context for a full reset, compact_context to summarize and shrink.',
+      'Use clear_context for a full reset, compact_context to summarize and shrink. ' +
+      'Use restart_daemon to restart the entire daemon session (preserves state via state.json).',
   },
 )
 
@@ -85,6 +87,22 @@ mcp.setRequestHandler(ListToolsRequestSchema, async () => ({
         'Query current daily token budget status. Returns budget mode, token estimate, ' +
         'max daily tokens, percentage used, and reset date. Read-only — does not modify state.',
       inputSchema: { type: 'object' as const, properties: {} },
+    },
+    {
+      name: 'restart_daemon',
+      description:
+        'Restart the daemon session. Kills the current tmux session and starts a fresh one. ' +
+        'State is preserved via state.json. Use for applying config changes, self-healing, or ' +
+        'resetting after errors. The restart happens asynchronously — this tool returns immediately.',
+      inputSchema: {
+        type: 'object' as const,
+        properties: {
+          reason: {
+            type: 'string',
+            description: 'Why the restart is being triggered (logged to progress.log).',
+          },
+        },
+      },
     },
   ],
 }))
@@ -156,6 +174,33 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
           isError: true,
           content: [{ type: 'text', text: `Failed to read budget status: ${msg}` }],
         }
+      }
+    }
+    case 'restart_daemon': {
+      const reason = ((args as Record<string, unknown>)?.reason as string) ?? 'no reason given'
+      const clawdkitSh = join(SCRIPTS_DIR, 'clawdkit.sh')
+      const logFile = join(INSTANCE_DIR, '.clawdkit', 'progress.log')
+      const ts = new Date().toISOString().replace(/\.\d+Z$/, 'Z')
+
+      // Log the restart reason before we die
+      const logLine = `[${ts}] [${AGENT_NAME}] restart_daemon triggered — ${reason}\n`
+      try {
+        const { appendFileSync } = await import('node:fs')
+        appendFileSync(logFile, logLine)
+      } catch { /* best effort */ }
+
+      // Spawn a fully detached process that waits 2s then restarts.
+      // The delay gives the MCP response time to reach the agent.
+      // nohup + setsid ensure the process survives the tmux session kill.
+      const restartCmd = `sleep 2 && "${clawdkitSh}" --instance "${AGENT_NAME}" restart`
+      Bun.spawn(['nohup', 'sh', '-c', restartCmd], {
+        stdout: 'ignore',
+        stderr: 'ignore',
+        stdin: 'ignore',
+      }).unref()
+
+      return {
+        content: [{ type: 'text', text: `Restart scheduled in 2 seconds. Reason: ${reason}` }],
       }
     }
     default:
