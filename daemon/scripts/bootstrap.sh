@@ -207,7 +207,7 @@ You decide what needs attention right now. Not everything needs action every cyc
 
 ## When You're Done
 
-Update `state.json` with the current timestamp and clear your context window using the `clear_context` tool.
+Update `state.json` with the current timestamp and compact your context window using the `compact_context` tool. Include instructions on what to preserve — key findings, pending work, and anything the next cycle should know.
 EOF
 fi
 
