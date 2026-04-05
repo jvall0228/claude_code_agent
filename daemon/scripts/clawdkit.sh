@@ -24,10 +24,9 @@ HEARTBEAT_PORT="${CLAWDKIT_HEARTBEAT_PORT:-7749}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 CLAWDKIT_SCRIPTS_PATH="$SCRIPT_DIR"
 
-# The heartbeat MCP json lives at daemon/mcp/heartbeat/.mcp.json
 # Walk up from scripts/ to find the daemon/ root
 DAEMON_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-MCP_HEARTBEAT="${DAEMON_DIR}/mcp/heartbeat/.mcp.json"
+# MCP_HEARTBEAT is set per-instance after the instance name is known (see do_start)
 
 OS="$(uname -s)"
 
@@ -92,6 +91,8 @@ do_start() {
   printf 'clawdkit: starting session %s\n' "$SESSION_NAME"
 
   # Export env for start-agent.sh
+  # Use the per-instance stamped MCP config (created by bootstrap.sh), not the raw template
+  MCP_HEARTBEAT="${INSTANCE_DIR}/.mcp-heartbeat.json"
   export CLAWDKIT_AGENT_NAME="$INSTANCE"
   export CLAWDKIT_INSTANCE_DIR="$INSTANCE_DIR"
   export CLAWDKIT_SCRIPTS_PATH="$CLAWDKIT_SCRIPTS_PATH"
@@ -142,11 +143,16 @@ do_health() {
     PANE_PID="$(tmux display-message -t "$SESSION_NAME" -p '#{pane_pid}')"
     PANE_DEAD="$(tmux display-message -t "$SESSION_NAME" -p '#{pane_dead}')"
     WINDOW_ACTIVE="$(tmux display-message -t "$SESSION_NAME" -p '#{window_active}')"
+    # Default to 0 if tmux returns empty to keep JSON valid
+    PANE_PID="${PANE_PID:-0}"
+    PANE_DEAD="${PANE_DEAD:-0}"
+    WINDOW_ACTIVE="${WINDOW_ACTIVE:-0}"
     printf '{"running":true,"session":"%s","pane_pid":%s,"pane_dead":%s,"window_active":%s}\n' \
       "$SESSION_NAME" "$PANE_PID" "$PANE_DEAD" "$WINDOW_ACTIVE"
   else
     tmux display-message -t "$SESSION_NAME" -p "#{session_name}: pane_pid=#{pane_pid} pane_dead=#{pane_dead} window_active=#{window_active}"
   fi
+  exit 0
 }
 
 do_install() {

@@ -28,7 +28,9 @@ log() {
 }
 
 # ---------------------------------------------------------------------------
-# Atomic lock helpers (mkdir is POSIX-atomic; file locks are not)
+# Atomic lock helpers (mkdir is POSIX-atomic on local filesystems; file locks are not)
+# Note: mkdir atomicity is NOT guaranteed on NFS. If instance dir is on a
+# network mount, concurrent heartbeats could both acquire the lock.
 # Note: SIGKILL bypasses the EXIT trap, leaving the lock dir behind.
 # The stale-lock pre-flight below handles that case on next invocation.
 # ---------------------------------------------------------------------------
@@ -93,13 +95,13 @@ else
   log "WARNING: HEARTBEAT.md not found at ${HEARTBEAT_FILE}"
 fi
 
-# 5. POST to heartbeat MCP
-HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' \
-  --max-time 10 \
+# 5. POST to heartbeat MCP (pipe via stdin to safely handle special chars/newlines)
+HTTP_CODE="$(printf '%s' "$PROMPT" | curl -s -o /dev/null -w '%{http_code}' \
+  --max-time 5 \
   --connect-timeout 3 \
   -X POST \
   -H 'Content-Type: text/plain' \
-  --data-raw "$PROMPT" \
+  --data-binary @- \
   "$HEARTBEAT_URL" 2>/dev/null || echo "000")"
 
 if [ "$HTTP_CODE" = "200" ]; then
@@ -114,7 +116,10 @@ if [ -f "$LOG_FILE" ]; then
   if [ "$LINE_COUNT" -gt "$MAX_LOG_LINES" ]; then
     KEEP=$((MAX_LOG_LINES - 100))
     TEMP_FILE="${LOG_FILE}.tmp.$$"
-    tail -n "$KEEP" "$LOG_FILE" > "$TEMP_FILE" && mv "$TEMP_FILE" "$LOG_FILE"
+    tail -n "$KEEP" "$LOG_FILE" > "$TEMP_FILE" && mv "$TEMP_FILE" "$LOG_FILE" || {
+      rm -f "$TEMP_FILE"
+      log "WARNING: log truncation failed"
+    }
     log "truncated progress.log to ${KEEP} lines (was ${LINE_COUNT})"
   fi
 fi

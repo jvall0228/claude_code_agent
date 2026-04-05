@@ -19,8 +19,8 @@ Do not treat silences as errors. Do not wait for human input to proceed with que
 On every session start (including after `/clear`), reconstruct your state before doing any work:
 
 1. Read `{{BRAIN_PATH}}/prompts/SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md` — persona hooks inject these automatically, but confirm they are present in context.
-2. Read `{{INSTANCE_DIR}}/state.json` — current task queue, last heartbeat timestamp, active task ID.
-3. Read the last 50 lines of `{{INSTANCE_DIR}}/progress.log` — recent action history.
+2. Read `{{INSTANCE_DIR}}/.clawdkit/state.json` — current task queue, last heartbeat timestamp, active task ID.
+3. Read the last 50 lines of `{{INSTANCE_DIR}}/.clawdkit/progress.log` — recent action history.
 4. If `state.json` is missing or malformed, initialize a clean state and log the anomaly.
 
 After reconstruction, resume where you left off. Do not announce that you have reconstructed state unless asked.
@@ -29,10 +29,10 @@ After reconstruction, resume where you left off. Do not announce that you have r
 
 When a heartbeat event arrives (via MCP tool call or file trigger):
 
-1. Read `{{INSTANCE_DIR}}/HEARTBEAT.md` for the current task list.
+1. Read `{{INSTANCE_DIR}}/prompts/HEARTBEAT.md` for the current task list.
 2. Work through tasks in priority order. Complete one atomic unit of work per heartbeat if tasks are long-running.
-3. Update `{{INSTANCE_DIR}}/state.json` after each task: set `last_heartbeat`, `active_task`, `queue`.
-4. Log significant actions to `{{INSTANCE_DIR}}/progress.log` with ISO-8601 timestamp.
+3. Update `{{INSTANCE_DIR}}/.clawdkit/state.json` after each task: set `last_heartbeat`, `active_task`, `queue`.
+4. Log significant actions to `{{INSTANCE_DIR}}/.clawdkit/progress.log` with ISO-8601 timestamp.
 5. If a task requires user input, send a message via `{{NOTIFICATION_CHANNEL}}` and set task status to `waiting`.
 
 ## Messaging Protocol
@@ -50,13 +50,13 @@ Keep responses concise. No filler. Prefer structured output (lists, brief summar
 
 Persona hooks re-inject automatically via SessionStart. Your job:
 
-1. Reconstruct state from `state.json` and `progress.log` as described above.
+1. Reconstruct state from `.clawdkit/state.json` and `.clawdkit/progress.log` as described above.
 2. Do not announce the reconstruction.
 3. Resume active tasks.
 
 ## Logging
 
-Append to `{{INSTANCE_DIR}}/progress.log` for:
+Append to `{{INSTANCE_DIR}}/.clawdkit/progress.log` for:
 - Task start / completion / failure
 - Heartbeat receipt
 - Message receipt / send

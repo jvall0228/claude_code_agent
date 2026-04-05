@@ -18,7 +18,14 @@ MCP_HEARTBEAT="${CLAWDKIT_MCP_HEARTBEAT:-}"
 OS="$(uname -s)"
 
 MAX_RETRIES=3
-RETRY_DELAY=5
+RETRY_DELAY_BASE=5
+RETRY_DELAY_JITTER=5
+
+# Pre-flight: ensure instance directory exists before entering retry loop
+if [ ! -d "$INSTANCE_DIR" ]; then
+  printf '[clawdkit] start-agent: INSTANCE_DIR does not exist: %s\n' "$INSTANCE_DIR" >&2
+  exit 1
+fi
 
 # Build argument list safely — no eval, handles paths with spaces
 set -- --dangerously-load-development-channels
@@ -42,6 +49,22 @@ if [ "$OS" = "Darwin" ]; then
   fi
 fi
 
+# Wait for daemon health endpoint to be ready before launching claude
+HEALTH_URL="http://127.0.0.1:${CLAWDKIT_HEARTBEAT_PORT:-7749}/heartbeat"
+READY_TIMEOUT=15
+READY_WAIT=0
+while [ "$READY_WAIT" -lt "$READY_TIMEOUT" ]; do
+  if curl -s -o /dev/null --max-time 2 --connect-timeout 1 "$HEALTH_URL" 2>/dev/null; then
+    printf '[clawdkit] start-agent: health endpoint ready\n'
+    break
+  fi
+  READY_WAIT=$((READY_WAIT + 1))
+  sleep 1
+done
+if [ "$READY_WAIT" -ge "$READY_TIMEOUT" ]; then
+  printf '[clawdkit] start-agent: WARNING: health endpoint not ready after %ds — proceeding anyway\n' "$READY_TIMEOUT" >&2
+fi
+
 attempt=0
 while [ "$attempt" -lt "$MAX_RETRIES" ]; do
   attempt=$((attempt + 1))
@@ -58,8 +81,11 @@ while [ "$attempt" -lt "$MAX_RETRIES" ]; do
   printf '[clawdkit] start-agent: claude exited with code %d\n' "$EXIT_CODE" >&2
 
   if [ "$attempt" -lt "$MAX_RETRIES" ]; then
-    printf '[clawdkit] start-agent: retrying in %ds...\n' "$RETRY_DELAY" >&2
-    sleep "$RETRY_DELAY"
+    # Add jitter to prevent thundering herd when multiple agents retry simultaneously
+    JITTER=$((RANDOM % RETRY_DELAY_JITTER))
+    DELAY=$((RETRY_DELAY_BASE + JITTER))
+    printf '[clawdkit] start-agent: retrying in %ds...\n' "$DELAY" >&2
+    sleep "$DELAY"
   fi
 done
 

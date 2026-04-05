@@ -85,6 +85,11 @@ if [ "$CHANNEL" = "imessage" ] && [ "$(uname -s)" != "Darwin" ]; then
   CHANNEL="telegram"
 fi
 
+# Reject path traversal components before canonicalization
+case "$BRAIN_PATH" in
+  */../*|*/..|../*|..) printf 'bootstrap.sh: brain path must not contain ".." components: %s\n' "$BRAIN_PATH" >&2; exit 1 ;;
+esac
+
 # Resolve absolute brain path
 BRAIN_PATH="$(cd "$BRAIN_PATH" 2>/dev/null && pwd)" || {
   printf 'bootstrap.sh: brain path not found: %s\n' "$BRAIN_PATH" >&2
@@ -179,7 +184,7 @@ touch "${INSTANCE_DIR}/.clawdkit/progress.log"
 # ---------------------------------------------------------------------------
 # Copy or create HEARTBEAT.md
 # ---------------------------------------------------------------------------
-HEARTBEAT_SRC="${DAEMON_DIR}/../docs/HEARTBEAT.md"
+HEARTBEAT_SRC="${BRAIN_PATH}/prompts/HEARTBEAT.md"
 HEARTBEAT_DEST="${INSTANCE_DIR}/prompts/HEARTBEAT.md"
 if [ -f "$HEARTBEAT_SRC" ]; then
   cp "$HEARTBEAT_SRC" "$HEARTBEAT_DEST"

@@ -8,6 +8,7 @@ BRAIN_PATH="${2:-}"
 
 if [ -z "$PERSONA_NAME" ] || [ -z "$BRAIN_PATH" ]; then
   printf 'inject-prompt.sh: usage: inject-prompt.sh <SOUL|IDENTITY|USER|TOOLS> <brain_path>\n' >&2
+  exit 1
 fi
 
 PERSONA_FILE="${BRAIN_PATH}/prompts/${PERSONA_NAME}.md"
