@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.clawdkit.heartbeat.{{AGENT_NAME}}</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{CLAWDKIT_SCRIPTS_PATH}}/heartbeat.sh</string>
+        <string>{{AGENT_NAME}}</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict>
+            <key>Minute</key>
+            <integer>0</integer>
+        </dict>
+        <dict>
+            <key>Minute</key>
+            <integer>30</integer>
+        </dict>
+    </array>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>{{INSTANCE_DIR}}/.clawdkit/heartbeat-launchd.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>{{INSTANCE_DIR}}/.clawdkit/heartbeat-launchd.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>{{HOME}}</string>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+</dict>
+</plist>

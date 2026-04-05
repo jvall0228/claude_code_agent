@@ -1,0 +1,14 @@
+[Unit]
+Description=ClawdKit Heartbeat for {{AGENT_NAME}}
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart={{CLAWDKIT_SCRIPTS_PATH}}/heartbeat.sh {{AGENT_NAME}}
+Environment=HOME={{HOME}}
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+StandardOutput=append:{{INSTANCE_DIR}}/.clawdkit/heartbeat-systemd.log
+StandardError=append:{{INSTANCE_DIR}}/.clawdkit/heartbeat-systemd.log
+
+[Install]
+WantedBy=default.target

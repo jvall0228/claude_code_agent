@@ -1,0 +1,11 @@
+[Unit]
+Description=ClawdKit Heartbeat Timer for {{AGENT_NAME}}
+Requires=clawdkit-heartbeat-{{AGENT_NAME}}.service
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+Unit=clawdkit-heartbeat-{{AGENT_NAME}}.service
+
+[Install]
+WantedBy=timers.target

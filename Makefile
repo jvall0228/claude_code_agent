@@ -8,8 +8,6 @@ REPO_ROOT  := $(dir $(realpath $(firstword $(MAKEFILE_LIST))))
 SCRIPTS    := $(REPO_ROOT)daemon/scripts
 CLAWDKIT   := $(SCRIPTS)/clawdkit.sh
 
-OS := $(shell uname -s)
-
 .PHONY: start stop restart status health install uninstall
 
 # ---------------------------------------------------------------------------
@@ -32,27 +30,11 @@ health:
 	@$(CLAWDKIT) --instance $(INSTANCE) health
 
 # ---------------------------------------------------------------------------
-# Scheduler install/uninstall (stubs — full impl in Unit 5)
+# Scheduler install/uninstall — delegate to clawdkit.sh
 # ---------------------------------------------------------------------------
 
 install:
-ifeq ($(OS),Darwin)
-	@echo "clawdkit install: launchd support coming in Unit 5."
-	@echo "  Instance: $(INSTANCE)"
-	@echo "  Platform: Darwin (launchd)"
-else
-	@echo "clawdkit install: systemd support coming in Unit 5."
-	@echo "  Instance: $(INSTANCE)"
-	@echo "  Platform: Linux (systemd)"
-endif
+	@$(CLAWDKIT) --instance $(INSTANCE) install
 
 uninstall:
-ifeq ($(OS),Darwin)
-	@echo "clawdkit uninstall: launchd support coming in Unit 5."
-	@echo "  Instance: $(INSTANCE)"
-	@echo "  Platform: Darwin (launchd)"
-else
-	@echo "clawdkit uninstall: systemd support coming in Unit 5."
-	@echo "  Instance: $(INSTANCE)"
-	@echo "  Platform: Linux (systemd)"
-endif
+	@$(CLAWDKIT) --instance $(INSTANCE) uninstall
