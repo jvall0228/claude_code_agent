@@ -1,0 +1,5 @@
+{
+  "name": "agent-daemon",
+  "description": "Lifecycle management for ClawdKit persistent daemon agents. Bootstrap, context reset, and context compact skills for daemon instances.",
+  "version": "1.0.0"
+}

@@ -1,0 +1,139 @@
+#!/bin/sh
+# clawdkit — CLI for managing ClawdKit daemon instances.
+#
+# Usage:
+#   clawdkit <command> [instance] [flags]
+#
+# Commands:
+#   start [instance]     Start a daemon instance
+#   stop [instance]      Stop a daemon instance
+#   restart [instance]   Restart a daemon instance
+#   status [instance]    Check if a daemon is running
+#   health [instance]    Detailed health info
+#   clear [instance]     Clear the agent's context window
+#   install [instance]   Install the 30-min heartbeat scheduler
+#   uninstall [instance] Remove the heartbeat scheduler
+#   logs [instance]      Tail the agent's progress log
+#   attach [instance]    Attach to the agent's tmux session
+#   heartbeat [instance]  Manually trigger a heartbeat
+#   list                 List running clawdkit tmux sessions
+#
+# Flags:
+#   --debug              Enable debug channels (fakechat)
+#   --json               Machine-readable output (health)
+#
+# Default instance: clawdkit
+
+set -e
+
+# Resolve the real path to this script (follows symlinks)
+SELF="$0"
+if [ -L "$SELF" ]; then
+  # POSIX-safe readlink fallback
+  SELF="$(cd "$(dirname "$SELF")" && cd "$(dirname "$(readlink "$SELF")")" && pwd)/$(basename "$(readlink "$SELF")")"
+fi
+BIN_DIR="$(cd "$(dirname "$SELF")" && pwd)"
+REPO_ROOT="$(cd "${BIN_DIR}/.." && pwd)"
+CLAWDKIT_SH="${REPO_ROOT}/daemon/scripts/clawdkit.sh"
+
+if [ ! -f "$CLAWDKIT_SH" ]; then
+  printf 'clawdkit: cannot find clawdkit.sh at %s\n' "$CLAWDKIT_SH" >&2
+  exit 1
+fi
+
+# ---------------------------------------------------------------------------
+# Parse: clawdkit <command> [instance] [flags...]
+# ---------------------------------------------------------------------------
+COMMAND=""
+INSTANCE=""
+FLAGS=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --debug|--json)
+      FLAGS="$FLAGS $arg"
+      ;;
+    start|stop|restart|status|health|clear|heartbeat|install|uninstall|logs|attach|list)
+      if [ -z "$COMMAND" ]; then
+        COMMAND="$arg"
+      else
+        INSTANCE="$arg"
+      fi
+      ;;
+    -*)
+      printf 'clawdkit: unknown flag: %s\n' "$arg" >&2
+      exit 1
+      ;;
+    *)
+      if [ -z "$COMMAND" ]; then
+        printf 'clawdkit: unknown command: %s\n' "$arg" >&2
+        printf 'Usage: clawdkit <command> [instance] [flags]\n' >&2
+        exit 1
+      elif [ -z "$INSTANCE" ]; then
+        INSTANCE="$arg"
+      else
+        printf 'clawdkit: unexpected argument: %s\n' "$arg" >&2
+        exit 1
+      fi
+      ;;
+  esac
+done
+
+if [ -z "$COMMAND" ]; then
+  printf 'Usage: clawdkit <command> [instance] [flags]\n\n' >&2
+  printf 'Commands:\n' >&2
+  printf '  start     Start a daemon instance\n' >&2
+  printf '  stop      Stop a daemon instance\n' >&2
+  printf '  restart   Restart a daemon instance\n' >&2
+  printf '  status    Check if running\n' >&2
+  printf '  health    Detailed health info\n' >&2
+  printf '  clear     Clear context window\n' >&2
+  printf '  install   Install heartbeat scheduler\n' >&2
+  printf '  uninstall Remove heartbeat scheduler\n' >&2
+  printf '  heartbeat Manually trigger a heartbeat\n' >&2
+  printf '  logs      Tail progress log\n' >&2
+  printf '  attach    Attach to tmux session\n' >&2
+  printf '  list      List running sessions\n' >&2
+  printf '\nDefault instance: clawdkit\n' >&2
+  exit 1
+fi
+
+INSTANCE="${INSTANCE:-clawdkit}"
+
+# ---------------------------------------------------------------------------
+# Handle commands that don't delegate to clawdkit.sh
+# ---------------------------------------------------------------------------
+case "$COMMAND" in
+  heartbeat)
+    HEARTBEAT_SH="${REPO_ROOT}/daemon/scripts/heartbeat.sh"
+    if [ ! -f "$HEARTBEAT_SH" ]; then
+      printf 'clawdkit: cannot find heartbeat.sh at %s\n' "$HEARTBEAT_SH" >&2
+      exit 1
+    fi
+    exec "$HEARTBEAT_SH" "$INSTANCE"
+    ;;
+  logs)
+    LOG_FILE="${HOME}/.clawdcode/${INSTANCE}/.clawdkit/progress.log"
+    if [ ! -f "$LOG_FILE" ]; then
+      printf 'clawdkit: no progress log for %s\n' "$INSTANCE" >&2
+      exit 1
+    fi
+    tail -f "$LOG_FILE"
+    ;;
+  attach)
+    SESSION_NAME="clawdkit-${INSTANCE}"
+    if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+      printf 'clawdkit: no session named %s\n' "$SESSION_NAME" >&2
+      exit 1
+    fi
+    tmux attach -t "$SESSION_NAME"
+    ;;
+  list)
+    tmux list-sessions 2>/dev/null | grep '^clawdkit-' | sed 's/^clawdkit-//' | cut -d: -f1 || \
+      printf 'No running clawdkit sessions.\n'
+    ;;
+  *)
+    # Delegate to clawdkit.sh
+    exec "$CLAWDKIT_SH" --instance "$INSTANCE" $FLAGS "$COMMAND"
+    ;;
+esac

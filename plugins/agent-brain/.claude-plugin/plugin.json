@@ -1,0 +1,6 @@
+{
+  "name": "agent-brain",
+  "description": "Scaffold and operate an agent-owned knowledge vault with persistent memory, identity, and self-improvement. v2.0.0 — Integrated with ClawdKit daemon. Brain lives at brain/ in the ClawdKit monorepo. Replaces v1.0.0 standalone vault structure.",
+  "version": "2.0.0",
+  "migration": "v1.0.0 used a standalone agent_brain/ vault with 01_Identity/ containing five separate files (purpose.md, capabilities.md, boundaries.md, voice.md, owner.md). v2.0.0 moves the brain into the ClawdKit monorepo at brain/ and replaces the identity structure with a 4-file persona under brain/prompts/: SOUL.md, IDENTITY.md, USER.md, TOOLS.md. Bootstrap now reads brain/CONTEXT.md as the entrypoint."
+}

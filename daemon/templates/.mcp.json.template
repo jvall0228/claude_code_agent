@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "clawdkit-heartbeat": {
+      "command": "bash",
+      "args": ["-c", "cd {{HEARTBEAT_MCP_PATH}} && bun server.ts"],
+      "env": {
+        "CLAWDKIT_AGENT_NAME": "{{AGENT_NAME}}"
+      }
+    },
+    "clawdkit-session-control": {
+      "command": "bash",
+      "args": ["-c", "cd {{SESSION_CONTROL_MCP_PATH}} && bun server.ts"],
+      "env": {
+        "CLAWDKIT_AGENT_NAME": "{{AGENT_NAME}}"
+      }
+    }
+  }
+}
