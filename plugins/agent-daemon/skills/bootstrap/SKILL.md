@@ -25,7 +25,22 @@ A fully initialized daemon instance at `~/.clawdcode/<agent_name>/`:
 
 Plus platform scheduler config installed and loaded.
 
-## Onboarding Flow
+## Non-Interactive Mode
+
+For agent-driven or automated bootstrapping, call the script directly — no prompts, exits non-zero on any validation failure:
+
+```sh
+daemon/scripts/bootstrap.sh \
+  --agent-name <name> \
+  --brain-path <path> \
+  [--channel telegram|imessage] \
+  [--scripts-path <path>] \
+  [--overwrite]
+```
+
+The script prints the instance path to stdout on success, all other output goes to stderr.
+
+## Interactive Onboarding Flow
 
 Ask the following questions in sequence using the interactive question tool. Validate each answer before proceeding.
 

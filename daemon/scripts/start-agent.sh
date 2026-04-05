@@ -20,25 +20,25 @@ OS="$(uname -s)"
 MAX_RETRIES=3
 RETRY_DELAY=5
 
-# Build channel flags
-CHANNEL_FLAGS="--dangerously-load-development-channels"
+# Build argument list safely — no eval, handles paths with spaces
+set -- --dangerously-load-development-channels
 
 # Heartbeat MCP channel (always)
 if [ -n "$MCP_HEARTBEAT" ] && [ -f "$MCP_HEARTBEAT" ]; then
-  CHANNEL_FLAGS="${CHANNEL_FLAGS} ${MCP_HEARTBEAT}"
+  set -- "$@" "$MCP_HEARTBEAT"
 fi
 
 # Telegram channel config (instance dir)
 TELEGRAM_MCP="${INSTANCE_DIR}/.mcp-telegram.json"
 if [ -f "$TELEGRAM_MCP" ]; then
-  CHANNEL_FLAGS="${CHANNEL_FLAGS} ${TELEGRAM_MCP}"
+  set -- "$@" "$TELEGRAM_MCP"
 fi
 
 # iMessage channel — macOS only
 if [ "$OS" = "Darwin" ]; then
   IMESSAGE_MCP="${INSTANCE_DIR}/.mcp-imessage.json"
   if [ -f "$IMESSAGE_MCP" ]; then
-    CHANNEL_FLAGS="${CHANNEL_FLAGS} ${IMESSAGE_MCP}"
+    set -- "$@" "$IMESSAGE_MCP"
   fi
 fi
 
@@ -49,7 +49,7 @@ while [ "$attempt" -lt "$MAX_RETRIES" ]; do
     "$attempt" "$MAX_RETRIES" "$INSTANCE_DIR"
 
   # Run claude from the instance directory so it picks up .claude/settings.json there
-  (cd "$INSTANCE_DIR" && eval claude $CHANNEL_FLAGS) && {
+  (cd "$INSTANCE_DIR" && claude "$@") && {
     printf '[clawdkit] start-agent: claude exited cleanly\n'
     exit 0
   }

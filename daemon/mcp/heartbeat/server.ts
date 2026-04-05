@@ -10,7 +10,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 
-const PORT = 7749
+const PORT = Number(process.env.CLAWDKIT_HEARTBEAT_PORT ?? 7749)
 
 const mcp = new Server(
   { name: 'clawdkit-heartbeat', version: '1.0.0' },
@@ -25,35 +25,50 @@ const mcp = new Server(
 
 await mcp.connect(new StdioServerTransport())
 
-Bun.serve({
-  port: PORT,
-  hostname: '127.0.0.1',
-  async fetch(req) {
-    const url = new URL(req.url)
+try {
+  Bun.serve({
+    port: PORT,
+    hostname: '127.0.0.1',
+    async fetch(req) {
+      try {
+        const url = new URL(req.url)
 
-    if (url.pathname === '/heartbeat' && req.method === 'POST') {
-      const body = await req.text()
-      if (!body.trim()) {
-        return new Response('empty body', { status: 400 })
+        if (url.pathname === '/heartbeat' && req.method === 'POST') {
+          const body = await req.text()
+          if (!body.trim()) {
+            return new Response('empty body', { status: 400 })
+          }
+
+          try {
+            await mcp.notification({
+              method: 'notifications/claude/channel',
+              params: {
+                content: body,
+                meta: {
+                  source: 'heartbeat',
+                  ts: new Date().toISOString(),
+                },
+              },
+            })
+          } catch (err) {
+            process.stderr.write(`clawdkit-heartbeat: notification failed: ${err}\n`)
+            return new Response('notification failed', { status: 500 })
+          }
+
+          return new Response(null, { status: 200 })
+        }
+
+        return new Response('not found', { status: 404 })
+      } catch (err) {
+        process.stderr.write(`clawdkit-heartbeat: request handler error: ${err}\n`)
+        return new Response('internal server error', { status: 500 })
       }
-
-      void mcp.notification({
-        method: 'notifications/claude/channel',
-        params: {
-          content: body,
-          meta: {
-            source: 'heartbeat',
-            ts: new Date().toISOString(),
-          },
-        },
-      })
-
-      return new Response(null, { status: 200 })
-    }
-
-    return new Response('not found', { status: 404 })
-  },
-})
+    },
+  })
+} catch (err) {
+  process.stderr.write(`clawdkit-heartbeat: failed to start HTTP server: ${err}\n`)
+  process.exit(1)
+}
 
 process.stderr.write(`clawdkit-heartbeat: listening on 127.0.0.1:${PORT}\n`)
 

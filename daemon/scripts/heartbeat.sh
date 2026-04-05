@@ -9,10 +9,11 @@ set -e
 
 AGENT_NAME="${CLAWDKIT_AGENT_NAME:-${1:-clawdkit}}"
 INSTANCE_DIR="${HOME}/.clawdcode/${AGENT_NAME}"
-LOCK_FILE="${INSTANCE_DIR}/.clawdkit/heartbeat.lock"
+LOCK_DIR="${INSTANCE_DIR}/.clawdkit/heartbeat.lock"
 LOG_FILE="${INSTANCE_DIR}/.clawdkit/progress.log"
 SESSION_NAME="clawdkit-${AGENT_NAME}"
-HEARTBEAT_URL="http://127.0.0.1:7749/heartbeat"
+HEARTBEAT_PORT="${CLAWDKIT_HEARTBEAT_PORT:-7749}"
+HEARTBEAT_URL="http://127.0.0.1:${HEARTBEAT_PORT}/heartbeat"
 HEARTBEAT_FILE="${INSTANCE_DIR}/prompts/HEARTBEAT.md"
 MAX_LOG_LINES=1000
 LOCK_MAX_AGE=1500  # 25 minutes in seconds
@@ -27,10 +28,12 @@ log() {
 }
 
 # ---------------------------------------------------------------------------
-# Lock file helpers (POSIX-compatible timestamp comparison)
+# Atomic lock helpers (mkdir is POSIX-atomic; file locks are not)
+# Note: SIGKILL bypasses the EXIT trap, leaving the lock dir behind.
+# The stale-lock pre-flight below handles that case on next invocation.
 # ---------------------------------------------------------------------------
 lock_age_seconds() {
-  LOCK_TS="$(cat "$LOCK_FILE" 2>/dev/null || echo 0)"
+  LOCK_TS="$(cat "${LOCK_DIR}/ts" 2>/dev/null || echo 0)"
   NOW="$(date +%s 2>/dev/null || echo 0)"
   # Fallback: if date +%s not available, skip age check (proceed)
   if [ "$NOW" = "0" ] || [ "$LOCK_TS" = "0" ]; then
@@ -40,26 +43,14 @@ lock_age_seconds() {
   echo $((NOW - LOCK_TS))
 }
 
-check_lock() {
-  if [ ! -f "$LOCK_FILE" ]; then
-    return 0  # No lock — proceed
-  fi
-  AGE="$(lock_age_seconds)"
-  if [ "$AGE" -lt "$LOCK_MAX_AGE" ]; then
-    log "lock held for ${AGE}s (< ${LOCK_MAX_AGE}s) — skipping"
-    return 1  # Recent lock — skip
-  fi
-  log "stale lock (${AGE}s old) — proceeding"
-  return 0  # Stale lock — proceed
-}
-
-create_lock() {
-  mkdir -p "$(dirname "$LOCK_FILE")"
-  date +%s > "$LOCK_FILE" 2>/dev/null || printf '0' > "$LOCK_FILE"
+acquire_lock() {
+  mkdir "$LOCK_DIR" 2>/dev/null || return 1
+  printf '%s' "$(date +%s 2>/dev/null || echo 0)" > "${LOCK_DIR}/ts"
+  return 0
 }
 
 remove_lock() {
-  rm -f "$LOCK_FILE"
+  rm -rf "$LOCK_DIR"
 }
 
 # ---------------------------------------------------------------------------
@@ -67,14 +58,25 @@ remove_lock() {
 # ---------------------------------------------------------------------------
 mkdir -p "${INSTANCE_DIR}/.clawdkit"
 
-# 1. Check lock
-check_lock || exit 0
+# 1. Pre-flight: remove stale lock left by a prior SIGKILL or crash
+if [ -d "$LOCK_DIR" ]; then
+  AGE="$(lock_age_seconds)"
+  if [ "$AGE" -lt "$LOCK_MAX_AGE" ]; then
+    log "lock held for ${AGE}s (< ${LOCK_MAX_AGE}s) — skipping"
+    exit 0
+  fi
+  log "stale lock (${AGE}s old) — removing"
+  rm -rf "$LOCK_DIR"
+fi
 
-# 2. Create lock
-create_lock
+# 2. Acquire atomic lock (mkdir is POSIX-atomic)
+if ! acquire_lock; then
+  log "failed to acquire lock (race condition) — skipping"
+  exit 0
+fi
 log "heartbeat started"
 
-# Ensure lock is removed on exit (even on error)
+# Ensure lock is removed on clean exit (SIGKILL will bypass this)
 trap 'remove_lock; log "heartbeat finished"' EXIT
 
 # 3. Check tmux session alive

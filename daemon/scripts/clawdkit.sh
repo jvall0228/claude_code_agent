@@ -2,11 +2,13 @@
 # clawdkit.sh — ClawdKit daemon manager
 # Subcommands: start | stop | restart | status | health | install | uninstall
 # Flag: --instance <name>  (default: clawdkit)
+# Flag: --json             (machine-readable output for health)
 #
 # Usage:
-#   clawdkit.sh [--instance <name>] <subcommand>
+#   clawdkit.sh [--instance <name>] [--json] <subcommand>
 #   clawdkit.sh start
 #   clawdkit.sh stop --instance myagent
+#   clawdkit.sh health --json
 
 set -e
 
@@ -14,7 +16,9 @@ set -e
 # Defaults
 # ---------------------------------------------------------------------------
 INSTANCE="clawdkit"
+JSON_OUTPUT=""
 CLAWDCODE_ROOT="${HOME}/.clawdcode"
+HEARTBEAT_PORT="${CLAWDKIT_HEARTBEAT_PORT:-7749}"
 
 # Resolve the directory this script lives in (POSIX-safe)
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -38,6 +42,9 @@ while [ $# -gt 0 ]; do
       shift
       INSTANCE="${1:?--instance requires a value}"
       ;;
+    --json)
+      JSON_OUTPUT=1
+      ;;
     start|stop|restart|status|health|install|uninstall)
       SUBCOMMAND="$1"
       ;;
@@ -50,9 +57,18 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$SUBCOMMAND" ]; then
-  printf 'Usage: clawdkit.sh [--instance <name>] <start|stop|restart|status|health|install|uninstall>\n' >&2
+  printf 'Usage: clawdkit.sh [--instance <name>] [--json] <start|stop|restart|status|health|install|uninstall>\n' >&2
   exit 1
 fi
+
+# ---------------------------------------------------------------------------
+# Validate instance name: must match [a-zA-Z0-9][a-zA-Z0-9-]*
+# ---------------------------------------------------------------------------
+case "$INSTANCE" in
+  '') printf 'clawdkit: instance name cannot be empty\n' >&2; exit 1 ;;
+  *[!a-zA-Z0-9-]*) printf 'clawdkit: invalid instance name "%s" — only alphanumeric and hyphens allowed\n' "$INSTANCE" >&2; exit 1 ;;
+  [-]*) printf 'clawdkit: invalid instance name "%s" — must not start with a hyphen\n' "$INSTANCE" >&2; exit 1 ;;
+esac
 
 SESSION_NAME="clawdkit-${INSTANCE}"
 INSTANCE_DIR="${CLAWDCODE_ROOT}/${INSTANCE}"
@@ -80,6 +96,7 @@ do_start() {
   export CLAWDKIT_INSTANCE_DIR="$INSTANCE_DIR"
   export CLAWDKIT_SCRIPTS_PATH="$CLAWDKIT_SCRIPTS_PATH"
   export CLAWDKIT_MCP_HEARTBEAT="$MCP_HEARTBEAT"
+  export CLAWDKIT_HEARTBEAT_PORT="$HEARTBEAT_PORT"
 
   # Create detached tmux session; set remain-on-exit so pane stays after crash
   tmux new-session -d -s "$SESSION_NAME" \
@@ -105,17 +122,31 @@ do_stop() {
 do_status() {
   if session_exists; then
     printf 'clawdkit: %s is RUNNING\n' "$SESSION_NAME"
+    exit 0
   else
     printf 'clawdkit: %s is STOPPED\n' "$SESSION_NAME"
+    exit 1
   fi
 }
 
 do_health() {
   if ! session_exists; then
-    printf 'clawdkit: %s — no session found\n' "$SESSION_NAME" >&2
+    if [ -n "$JSON_OUTPUT" ]; then
+      printf '{"running":false,"session":"%s"}\n' "$SESSION_NAME"
+    else
+      printf 'clawdkit: %s — no session found\n' "$SESSION_NAME" >&2
+    fi
     exit 1
   fi
-  tmux display-message -t "$SESSION_NAME" -p "#{session_name}: pane_pid=#{pane_pid} pane_dead=#{pane_dead} window_active=#{window_active}"
+  if [ -n "$JSON_OUTPUT" ]; then
+    PANE_PID="$(tmux display-message -t "$SESSION_NAME" -p '#{pane_pid}')"
+    PANE_DEAD="$(tmux display-message -t "$SESSION_NAME" -p '#{pane_dead}')"
+    WINDOW_ACTIVE="$(tmux display-message -t "$SESSION_NAME" -p '#{window_active}')"
+    printf '{"running":true,"session":"%s","pane_pid":%s,"pane_dead":%s,"window_active":%s}\n' \
+      "$SESSION_NAME" "$PANE_PID" "$PANE_DEAD" "$WINDOW_ACTIVE"
+  else
+    tmux display-message -t "$SESSION_NAME" -p "#{session_name}: pane_pid=#{pane_pid} pane_dead=#{pane_dead} window_active=#{window_active}"
+  fi
 }
 
 do_install() {
