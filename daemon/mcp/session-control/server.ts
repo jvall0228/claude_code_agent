@@ -147,10 +147,11 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       // Spawn a detached process that waits then restarts the daemon.
-      // The delay gives the MCP response time to be delivered before the session dies.
+      // nohup is required: tmux kill-session sends SIGHUP to all processes in the
+      // session group, which would kill the child before it wakes from sleep.
       const clawdkitSh = join(SCRIPTS_PATH, 'clawdkit.sh')
       try {
-        Bun.spawn(['sh', '-c', `sleep 2 && "${clawdkitSh}" --instance "${AGENT_NAME}" restart`], {
+        Bun.spawn(['sh', '-c', `nohup sh -c 'sleep 2 && "${clawdkitSh}" --instance "${AGENT_NAME}" restart' >/dev/null 2>&1`], {
           stdout: 'ignore',
           stderr: 'ignore',
           stdin: 'ignore',
