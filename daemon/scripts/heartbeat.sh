@@ -60,7 +60,48 @@ remove_lock() {
 # ---------------------------------------------------------------------------
 mkdir -p "${INSTANCE_DIR}/.clawdkit"
 
-# 1. Pre-flight: remove stale lock left by a prior SIGKILL or crash
+# 1. Pause check — exit early if paused
+PAUSE_FILE="${INSTANCE_DIR}/.clawdkit/paused"
+if [ -f "$PAUSE_FILE" ]; then
+  log "heartbeats paused — skipping (remove ${PAUSE_FILE} or run clawdkit.sh resume)"
+  exit 0
+fi
+
+# 2. Interval gate — skip if not enough time since last heartbeat
+STATE_FILE="${INSTANCE_DIR}/.clawdkit/state.json"
+if [ -f "$STATE_FILE" ]; then
+  INTERVAL_MIN=""
+  LAST_HB=""
+  if command -v jq >/dev/null 2>&1; then
+    INTERVAL_MIN="$(jq -r '.heartbeat_interval_minutes // empty' "$STATE_FILE" 2>/dev/null)" || INTERVAL_MIN=""
+    LAST_HB="$(jq -r '.last_heartbeat // empty' "$STATE_FILE" 2>/dev/null)" || LAST_HB=""
+  elif command -v python3 >/dev/null 2>&1; then
+    INTERVAL_MIN="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); v=d.get('heartbeat_interval_minutes'); print(v if v is not None else '')" 2>/dev/null)" || INTERVAL_MIN=""
+    LAST_HB="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); v=d.get('last_heartbeat',''); print(v if v else '')" 2>/dev/null)" || LAST_HB=""
+  fi
+
+  if [ -n "$INTERVAL_MIN" ] && [ "$INTERVAL_MIN" != "null" ] && [ -n "$LAST_HB" ] && [ "$LAST_HB" != "null" ]; then
+    # Convert last_heartbeat ISO-8601 to epoch
+    LAST_EPOCH=""
+    if command -v date >/dev/null 2>&1; then
+      # GNU date uses -d, BSD (macOS) date uses -jf
+      LAST_EPOCH="$(date -jf '%Y-%m-%dT%H:%M:%SZ' "$LAST_HB" '+%s' 2>/dev/null)" || \
+      LAST_EPOCH="$(date -d "$LAST_HB" '+%s' 2>/dev/null)" || LAST_EPOCH=""
+    fi
+
+    if [ -n "$LAST_EPOCH" ]; then
+      NOW_EPOCH="$(date +%s 2>/dev/null || echo 0)"
+      ELAPSED_MIN=$(( (NOW_EPOCH - LAST_EPOCH) / 60 ))
+      INTERVAL_INT="${INTERVAL_MIN%%.*}"
+      if [ -n "$INTERVAL_INT" ] && [ "$ELAPSED_MIN" -lt "$INTERVAL_INT" ] 2>/dev/null; then
+        log "interval gate: ${ELAPSED_MIN}m since last heartbeat (interval: ${INTERVAL_INT}m) — skipping"
+        exit 0
+      fi
+    fi
+  fi
+fi
+
+# 4. Pre-flight: remove stale lock left by a prior SIGKILL or crash
 if [ -d "$LOCK_DIR" ]; then
   AGE="$(lock_age_seconds)"
   if [ "$AGE" -lt "$LOCK_MAX_AGE" ]; then
@@ -71,7 +112,7 @@ if [ -d "$LOCK_DIR" ]; then
   rm -rf "$LOCK_DIR"
 fi
 
-# 2. Acquire atomic lock (mkdir is POSIX-atomic)
+# 5. Acquire atomic lock (mkdir is POSIX-atomic)
 if ! acquire_lock; then
   log "failed to acquire lock (race condition) — skipping"
   exit 0
@@ -81,8 +122,7 @@ log "heartbeat started"
 # Ensure lock is removed on clean exit (SIGKILL will bypass this)
 trap 'remove_lock; log "heartbeat finished"' EXIT
 
-# 3. Budget gate — skip heartbeat POST when rate limit usage is too high
-STATE_FILE="${INSTANCE_DIR}/.clawdkit/state.json"
+# 6. Budget gate — skip heartbeat POST when rate limit usage is too high
 BUDGET_SKIP=""
 if [ -f "$STATE_FILE" ]; then
   # Extract budget fields via jq or python3 fallback
@@ -119,13 +159,13 @@ if [ -n "$BUDGET_SKIP" ]; then
   exit 0
 fi
 
-# 4. Check tmux session alive
+# 7. Check tmux session alive
 if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
   log "ERROR: tmux session ${SESSION_NAME} not found — daemon not running"
   exit 0
 fi
 
-# 4. Read heartbeat prompt — only send if the file exists
+# 7. Read heartbeat prompt — only send if the file exists
 if [ ! -f "$HEARTBEAT_FILE" ]; then
   log "ERROR: HEARTBEAT.md not found at ${HEARTBEAT_FILE} — skipping"
   exit 0
@@ -136,7 +176,7 @@ if [ -z "$PROMPT" ]; then
   exit 0
 fi
 
-# 5. POST to heartbeat MCP (pipe via stdin to safely handle special chars/newlines)
+# 8. POST to heartbeat MCP (pipe via stdin to safely handle special chars/newlines)
 HTTP_CODE="$(printf '%s' "$PROMPT" | curl -s -o /dev/null -w '%{http_code}' \
   --max-time 5 \
   --connect-timeout 3 \
@@ -151,7 +191,7 @@ else
   log "ERROR: heartbeat POST failed (HTTP ${HTTP_CODE}) — is the daemon running?"
 fi
 
-# 6. Truncate progress.log if > MAX_LOG_LINES
+# 9. Truncate progress.log if > MAX_LOG_LINES
 if [ -f "$LOG_FILE" ]; then
   LINE_COUNT="$(wc -l < "$LOG_FILE" | tr -d ' ')"
   if [ "$LINE_COUNT" -gt "$MAX_LOG_LINES" ]; then

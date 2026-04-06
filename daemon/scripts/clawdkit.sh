@@ -1,6 +1,6 @@
 #!/bin/sh
 # clawdkit.sh — ClawdKit daemon manager
-# Subcommands: start | stop | restart | status | health | install | uninstall
+# Subcommands: start | stop | restart | status | health | pause | resume | install | uninstall
 # Flag: --instance <name>  (default: clawdkit)
 # Flag: --json             (machine-readable output for health)
 # Flag: --debug            (enable debug channels like fakechat)
@@ -50,7 +50,7 @@ while [ $# -gt 0 ]; do
     --debug)
       DEBUG_MODE=1
       ;;
-    start|stop|restart|status|health|clear|install|uninstall)
+    start|stop|restart|status|health|clear|pause|resume|install|uninstall)
       SUBCOMMAND="$1"
       ;;
     *)
@@ -62,7 +62,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$SUBCOMMAND" ]; then
-  printf 'Usage: clawdkit.sh [--instance <name>] [--json] [--debug] <start|stop|restart|status|health|clear|install|uninstall>\n' >&2
+  printf 'Usage: clawdkit.sh [--instance <name>] [--json] [--debug] <start|stop|restart|status|health|clear|pause|resume|install|uninstall>\n' >&2
   exit 1
 fi
 
@@ -132,8 +132,13 @@ do_stop() {
 }
 
 do_status() {
+  PAUSE_FILE="${INSTANCE_DIR}/.clawdkit/paused"
   if session_exists; then
-    printf 'clawdkit: %s is RUNNING\n' "$SESSION_NAME"
+    if [ -f "$PAUSE_FILE" ]; then
+      printf 'clawdkit: %s is RUNNING (heartbeats paused)\n' "$SESSION_NAME"
+    else
+      printf 'clawdkit: %s is RUNNING\n' "$SESSION_NAME"
+    fi
     exit 0
   else
     printf 'clawdkit: %s is STOPPED\n' "$SESSION_NAME"
@@ -282,6 +287,27 @@ do_install() {
   fi
 }
 
+do_pause() {
+  PAUSE_FILE="${INSTANCE_DIR}/.clawdkit/paused"
+  if [ -f "$PAUSE_FILE" ]; then
+    printf 'clawdkit: heartbeats already paused for %s\n' "$SESSION_NAME"
+    return 0
+  fi
+  mkdir -p "${INSTANCE_DIR}/.clawdkit"
+  date -u +%Y-%m-%dT%H:%M:%SZ > "$PAUSE_FILE"
+  printf 'clawdkit: heartbeats paused for %s\n' "$SESSION_NAME"
+}
+
+do_resume() {
+  PAUSE_FILE="${INSTANCE_DIR}/.clawdkit/paused"
+  if [ ! -f "$PAUSE_FILE" ]; then
+    printf 'clawdkit: heartbeats not paused for %s\n' "$SESSION_NAME"
+    return 0
+  fi
+  rm -f "$PAUSE_FILE"
+  printf 'clawdkit: heartbeats resumed for %s\n' "$SESSION_NAME"
+}
+
 do_uninstall() {
   if [ "$OS" = "Darwin" ]; then
     PLIST_LABEL="com.clawdkit.heartbeat.${INSTANCE}"
@@ -316,6 +342,8 @@ case "$SUBCOMMAND" in
   status)  do_status ;;
   health)  do_health ;;
   clear)   do_clear ;;
+  pause)   do_pause ;;
+  resume)  do_resume ;;
   install)   do_install ;;
   uninstall) do_uninstall ;;
 esac
