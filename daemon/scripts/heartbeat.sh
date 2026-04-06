@@ -60,7 +60,14 @@ remove_lock() {
 # ---------------------------------------------------------------------------
 mkdir -p "${INSTANCE_DIR}/.clawdkit"
 
-# 1. Pre-flight: remove stale lock left by a prior SIGKILL or crash
+# 1. Pause check — exit early if paused
+PAUSE_FILE="${INSTANCE_DIR}/.clawdkit/paused"
+if [ -f "$PAUSE_FILE" ]; then
+  log "heartbeats paused — skipping (remove ${PAUSE_FILE} or run clawdkit.sh resume)"
+  exit 0
+fi
+
+# 2. Pre-flight: remove stale lock left by a prior SIGKILL or crash
 if [ -d "$LOCK_DIR" ]; then
   AGE="$(lock_age_seconds)"
   if [ "$AGE" -lt "$LOCK_MAX_AGE" ]; then
@@ -71,7 +78,7 @@ if [ -d "$LOCK_DIR" ]; then
   rm -rf "$LOCK_DIR"
 fi
 
-# 2. Acquire atomic lock (mkdir is POSIX-atomic)
+# 3. Acquire atomic lock (mkdir is POSIX-atomic)
 if ! acquire_lock; then
   log "failed to acquire lock (race condition) — skipping"
   exit 0
@@ -125,7 +132,7 @@ if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
   exit 0
 fi
 
-# 4. Read heartbeat prompt — only send if the file exists
+# 5. Read heartbeat prompt — only send if the file exists
 if [ ! -f "$HEARTBEAT_FILE" ]; then
   log "ERROR: HEARTBEAT.md not found at ${HEARTBEAT_FILE} — skipping"
   exit 0
@@ -136,7 +143,7 @@ if [ -z "$PROMPT" ]; then
   exit 0
 fi
 
-# 5. POST to heartbeat MCP (pipe via stdin to safely handle special chars/newlines)
+# 6. POST to heartbeat MCP (pipe via stdin to safely handle special chars/newlines)
 HTTP_CODE="$(printf '%s' "$PROMPT" | curl -s -o /dev/null -w '%{http_code}' \
   --max-time 5 \
   --connect-timeout 3 \
@@ -151,7 +158,7 @@ else
   log "ERROR: heartbeat POST failed (HTTP ${HTTP_CODE}) — is the daemon running?"
 fi
 
-# 6. Truncate progress.log if > MAX_LOG_LINES
+# 7. Truncate progress.log if > MAX_LOG_LINES
 if [ -f "$LOG_FILE" ]; then
   LINE_COUNT="$(wc -l < "$LOG_FILE" | tr -d ' ')"
   if [ "$LINE_COUNT" -gt "$MAX_LOG_LINES" ]; then
