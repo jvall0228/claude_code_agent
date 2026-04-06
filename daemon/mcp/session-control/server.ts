@@ -153,17 +153,24 @@ mcp.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
 
+      // Log restart to progress.log before we die
+      const logFile = join(INSTANCE_DIR, '.clawdkit', 'progress.log')
+      const ts = new Date().toISOString().replace(/\.\d+Z$/, 'Z')
+      try {
+        const { appendFileSync } = await import('node:fs')
+        appendFileSync(logFile, `[${ts}] [${AGENT_NAME}] restart_daemon triggered — ${reason ?? 'none'}\n`)
+      } catch { /* best effort */ }
+
       // Spawn a detached process that waits then restarts the daemon.
       // nohup is required: tmux kill-session sends SIGHUP to all processes in the
       // session group, which would kill the child before it wakes from sleep.
       const clawdkitSh = join(SCRIPTS_PATH, 'clawdkit.sh')
       try {
-        Bun.spawn(['sh', '-c', `nohup sh -c 'sleep 2 && "${clawdkitSh}" --instance "${AGENT_NAME}" restart' >/dev/null 2>&1`], {
+        Bun.spawn(['nohup', 'sh', '-c', `sleep 2 && "${clawdkitSh}" --instance "${AGENT_NAME}" restart`], {
           stdout: 'ignore',
           stderr: 'ignore',
           stdin: 'ignore',
-        })
-        // Not awaited — the process outlives us.
+        }).unref()
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         process.stderr.write(`clawdkit-session-control: restart spawn failed: ${msg}\n`)
