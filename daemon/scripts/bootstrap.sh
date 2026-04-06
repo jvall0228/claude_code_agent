@@ -13,6 +13,42 @@
 set -e
 
 # ---------------------------------------------------------------------------
+# Dependency preflight — verify required tools are available
+# ---------------------------------------------------------------------------
+preflight_check() {
+  MISSING=""
+
+  # Required
+  command -v bun >/dev/null 2>&1 || MISSING="$MISSING bun"
+  command -v tmux >/dev/null 2>&1 || MISSING="$MISSING tmux"
+  command -v claude >/dev/null 2>&1 || MISSING="$MISSING claude"
+  command -v curl >/dev/null 2>&1 || MISSING="$MISSING curl"
+
+  if [ -n "$MISSING" ]; then
+    printf 'bootstrap.sh: missing required dependencies:%s\n' "$MISSING" >&2
+    printf '\nInstall hints:\n' >&2
+    for dep in $MISSING; do
+      case "$dep" in
+        bun)    printf '  bun:    brew install bun  OR  curl -fsSL https://bun.sh/install | bash\n' >&2 ;;
+        tmux)   printf '  tmux:   brew install tmux  OR  apt install tmux\n' >&2 ;;
+        claude) printf '  claude: npm install -g @anthropic-ai/claude-code\n' >&2 ;;
+        curl)   printf '  curl:   brew install curl  OR  apt install curl\n' >&2 ;;
+      esac
+    done
+    return 1
+  fi
+
+  # Optional (warn only)
+  if ! command -v jq >/dev/null 2>&1; then
+    printf 'bootstrap.sh: WARNING: jq not found — persona hooks will fall back to python3\n' >&2
+  fi
+
+  return 0
+}
+
+preflight_check || exit 1
+
+# ---------------------------------------------------------------------------
 # Defaults
 # ---------------------------------------------------------------------------
 AGENT_NAME=""
@@ -20,6 +56,7 @@ BRAIN_PATH=""
 CHANNEL="telegram"
 SCRIPTS_PATH=""
 OVERWRITE=""
+SCAFFOLD_BRAIN=""
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -45,9 +82,12 @@ while [ $# -gt 0 ]; do
     --overwrite)
       OVERWRITE=1
       ;;
+    --scaffold-brain)
+      SCAFFOLD_BRAIN=1
+      ;;
     *)
       printf 'bootstrap.sh: unknown argument: %s\n' "$1" >&2
-      printf 'Usage: bootstrap.sh --agent-name <name> --brain-path <path> [--channel telegram|imessage] [--scripts-path <path>] [--overwrite]\n' >&2
+      printf 'Usage: bootstrap.sh --agent-name <name> --brain-path <path> [--channel telegram|imessage|fakechat] [--scripts-path <path>] [--overwrite] [--scaffold-brain]\n' >&2
       exit 1
       ;;
   esac
@@ -89,6 +129,32 @@ fi
 case "$BRAIN_PATH" in
   */../*|*/..|../*|..) printf 'bootstrap.sh: brain path must not contain ".." components: %s\n' "$BRAIN_PATH" >&2; exit 1 ;;
 esac
+
+# ---------------------------------------------------------------------------
+# Scaffold brain from repo templates if requested and path doesn't exist
+# ---------------------------------------------------------------------------
+if [ -n "$SCAFFOLD_BRAIN" ] && [ ! -d "$BRAIN_PATH" ]; then
+  SCRIPT_DIR_TMP="$(cd "$(dirname "$0")" && pwd)"
+  REPO_BRAIN="$(cd "${SCRIPT_DIR_TMP}/../../brain" 2>/dev/null && pwd)" || {
+    printf 'bootstrap.sh: cannot find repo brain/ templates for scaffolding\n' >&2
+    exit 1
+  }
+
+  printf 'bootstrap.sh: scaffolding brain at %s from repo templates\n' "$BRAIN_PATH" >&2
+  mkdir -p "${BRAIN_PATH}/prompts" "${BRAIN_PATH}/knowledge"
+  for f in SOUL.md IDENTITY.md USER.md TOOLS.md HEARTBEAT.md; do
+    if [ -f "${REPO_BRAIN}/prompts/${f}" ]; then
+      # Stamp agent name into the copies
+      sed -e "s|{{AGENT_NAME}}|${AGENT_NAME}|g" \
+          "${REPO_BRAIN}/prompts/${f}" > "${BRAIN_PATH}/prompts/${f}"
+    fi
+  done
+  # Copy CONTEXT.md if present
+  if [ -f "${REPO_BRAIN}/CONTEXT.md" ]; then
+    cp "${REPO_BRAIN}/CONTEXT.md" "${BRAIN_PATH}/CONTEXT.md"
+  fi
+  printf 'bootstrap.sh: brain scaffolded — customize files in %s/prompts/ later\n' "$BRAIN_PATH" >&2
+fi
 
 # Resolve absolute brain path
 BRAIN_PATH="$(cd "$BRAIN_PATH" 2>/dev/null && pwd)" || {
