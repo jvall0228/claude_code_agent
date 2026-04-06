@@ -150,6 +150,26 @@ do_health() {
     fi
     exit 1
   fi
+  # Read budget status from state.json
+  STATE_FILE="${INSTANCE_DIR}/.clawdkit/state.json"
+  BUDGET_MODE=""
+  FIVE_HOUR_PCT=""
+  SEVEN_DAY_PCT=""
+  USAGE_UPDATED=""
+  if [ -f "$STATE_FILE" ]; then
+    if command -v jq >/dev/null 2>&1; then
+      BUDGET_MODE="$(jq -r '.budget_mode // empty' "$STATE_FILE" 2>/dev/null)" || BUDGET_MODE=""
+      FIVE_HOUR_PCT="$(jq -r '.five_hour_used_pct // empty' "$STATE_FILE" 2>/dev/null)" || FIVE_HOUR_PCT=""
+      SEVEN_DAY_PCT="$(jq -r '.seven_day_used_pct // empty' "$STATE_FILE" 2>/dev/null)" || SEVEN_DAY_PCT=""
+      USAGE_UPDATED="$(jq -r '.usage_updated_at // empty' "$STATE_FILE" 2>/dev/null)" || USAGE_UPDATED=""
+    elif command -v python3 >/dev/null 2>&1; then
+      BUDGET_MODE="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('budget_mode',''))" 2>/dev/null)" || BUDGET_MODE=""
+      FIVE_HOUR_PCT="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('five_hour_used_pct',''))" 2>/dev/null)" || FIVE_HOUR_PCT=""
+      SEVEN_DAY_PCT="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('seven_day_used_pct',''))" 2>/dev/null)" || SEVEN_DAY_PCT=""
+      USAGE_UPDATED="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('usage_updated_at',''))" 2>/dev/null)" || USAGE_UPDATED=""
+    fi
+  fi
+
   if [ -n "$JSON_OUTPUT" ]; then
     PANE_PID="$(tmux display-message -t "$SESSION_NAME" -p '#{pane_pid}')"
     PANE_DEAD="$(tmux display-message -t "$SESSION_NAME" -p '#{pane_dead}')"
@@ -158,10 +178,30 @@ do_health() {
     PANE_PID="${PANE_PID:-0}"
     PANE_DEAD="${PANE_DEAD:-0}"
     WINDOW_ACTIVE="${WINDOW_ACTIVE:-0}"
-    printf '{"running":true,"session":"%s","pane_pid":%s,"pane_dead":%s,"window_active":%s}\n' \
-      "$SESSION_NAME" "$PANE_PID" "$PANE_DEAD" "$WINDOW_ACTIVE"
+    if [ -n "$BUDGET_MODE" ]; then
+      printf '{"running":true,"session":"%s","pane_pid":%s,"pane_dead":%s,"window_active":%s,"budget_mode":"%s","five_hour_used_pct":%s,"seven_day_used_pct":%s}\n' \
+        "$SESSION_NAME" "$PANE_PID" "$PANE_DEAD" "$WINDOW_ACTIVE" \
+        "$BUDGET_MODE" "${FIVE_HOUR_PCT:-null}" "${SEVEN_DAY_PCT:-null}"
+    else
+      printf '{"running":true,"session":"%s","pane_pid":%s,"pane_dead":%s,"window_active":%s}\n' \
+        "$SESSION_NAME" "$PANE_PID" "$PANE_DEAD" "$WINDOW_ACTIVE"
+    fi
   else
     tmux display-message -t "$SESSION_NAME" -p "#{session_name}: pane_pid=#{pane_pid} pane_dead=#{pane_dead} window_active=#{window_active}"
+    if [ -n "$FIVE_HOUR_PCT" ] && [ "$FIVE_HOUR_PCT" != "null" ]; then
+      printf '  budget: %s | 5h: %s%%' "${BUDGET_MODE:-normal}" "$FIVE_HOUR_PCT"
+      if [ -n "$SEVEN_DAY_PCT" ] && [ "$SEVEN_DAY_PCT" != "null" ]; then
+        printf ' | 7d: %s%%' "$SEVEN_DAY_PCT"
+      fi
+      printf '\n'
+      if [ -n "$USAGE_UPDATED" ]; then
+        printf '  last update: %s\n' "$USAGE_UPDATED"
+      fi
+    elif [ -n "$BUDGET_MODE" ]; then
+      printf '  budget: %s (rate limit data not yet available)\n' "$BUDGET_MODE"
+    else
+      printf '  budget tracking: not configured\n'
+    fi
   fi
   exit 0
 }

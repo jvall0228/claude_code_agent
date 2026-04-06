@@ -81,7 +81,45 @@ log "heartbeat started"
 # Ensure lock is removed on clean exit (SIGKILL will bypass this)
 trap 'remove_lock; log "heartbeat finished"' EXIT
 
-# 3. Check tmux session alive
+# 3. Budget gate — skip heartbeat POST when rate limit usage is too high
+STATE_FILE="${INSTANCE_DIR}/.clawdkit/state.json"
+BUDGET_SKIP=""
+if [ -f "$STATE_FILE" ]; then
+  # Extract budget fields via jq or python3 fallback
+  if command -v jq >/dev/null 2>&1; then
+    BUDGET_MODE="$(jq -r '.budget_mode // empty' "$STATE_FILE" 2>/dev/null)" || BUDGET_MODE=""
+    FIVE_HOUR_PCT="$(jq -r '.five_hour_used_pct // empty' "$STATE_FILE" 2>/dev/null)" || FIVE_HOUR_PCT=""
+    EXHAUSTED_PCT="$(jq -r '.exhausted_threshold_pct // empty' "$STATE_FILE" 2>/dev/null)" || EXHAUSTED_PCT=""
+  elif command -v python3 >/dev/null 2>&1; then
+    BUDGET_MODE="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('budget_mode',''))" 2>/dev/null)" || BUDGET_MODE=""
+    FIVE_HOUR_PCT="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('five_hour_used_pct',''))" 2>/dev/null)" || FIVE_HOUR_PCT=""
+    EXHAUSTED_PCT="$(python3 -c "import json; d=json.load(open('$STATE_FILE')); print(d.get('exhausted_threshold_pct',''))" 2>/dev/null)" || EXHAUSTED_PCT=""
+  else
+    log "WARNING: neither jq nor python3 available — skipping budget check (fail-open)"
+  fi
+
+  # Gate 1: budget_mode explicitly set to exhausted by the agent
+  if [ "$BUDGET_MODE" = "exhausted" ]; then
+    BUDGET_SKIP="budget_mode is exhausted"
+  fi
+
+  # Gate 2: 5-hour rate limit exceeds exhausted threshold (default 95%)
+  if [ -z "$BUDGET_SKIP" ] && [ -n "$FIVE_HOUR_PCT" ] && [ "$FIVE_HOUR_PCT" != "null" ]; then
+    THRESHOLD="${EXHAUSTED_PCT:-95}"
+    # Compare as integers (truncate decimals)
+    FIVE_HOUR_INT="${FIVE_HOUR_PCT%%.*}"
+    if [ -n "$FIVE_HOUR_INT" ] && [ "$FIVE_HOUR_INT" -ge "$THRESHOLD" ] 2>/dev/null; then
+      BUDGET_SKIP="5h rate limit at ${FIVE_HOUR_PCT}% (threshold: ${THRESHOLD}%)"
+    fi
+  fi
+fi
+
+if [ -n "$BUDGET_SKIP" ]; then
+  log "budget gate — skipping heartbeat POST ($BUDGET_SKIP)"
+  exit 0
+fi
+
+# 4. Check tmux session alive
 if ! tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
   log "ERROR: tmux session ${SESSION_NAME} not found — daemon not running"
   exit 0

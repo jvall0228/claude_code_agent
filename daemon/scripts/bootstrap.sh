@@ -173,7 +173,18 @@ cat > "${INSTANCE_DIR}/.clawdkit/state.json" <<EOF
   "last_heartbeat": null,
   "session_started": null,
   "heartbeat_in_progress": false,
-  "notification_channel": "${CHANNEL}"
+  "notification_channel": "${CHANNEL}",
+  "five_hour_used_pct": null,
+  "five_hour_resets_at": null,
+  "seven_day_used_pct": null,
+  "seven_day_resets_at": null,
+  "session_input_tokens": null,
+  "session_output_tokens": null,
+  "session_cost_usd": null,
+  "usage_updated_at": null,
+  "budget_mode": "normal",
+  "low_fuel_threshold_pct": 80,
+  "exhausted_threshold_pct": 95
 }
 EOF
 

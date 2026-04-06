@@ -29,11 +29,67 @@ After reconstruction, resume where you left off. Do not announce that you have r
 
 When a heartbeat event arrives (via MCP tool call or file trigger):
 
-1. Read `{{INSTANCE_DIR}}/prompts/HEARTBEAT.md` for the current task list.
-2. Work through tasks in priority order. Complete one atomic unit of work per heartbeat if tasks are long-running.
-3. Update `{{INSTANCE_DIR}}/.clawdkit/state.json` after each task: set `last_heartbeat`, `active_task`, `queue`.
-4. Log significant actions to `{{INSTANCE_DIR}}/.clawdkit/progress.log` with ISO-8601 timestamp.
-5. If a task requires user input, send a message via `{{NOTIFICATION_CHANNEL}}` and set task status to `waiting`.
+1. **Budget check first** — run the Usage Budget Protocol (below) before any task work. If budget mode is `exhausted`, skip all proactive tasks and compact context.
+2. Read `{{INSTANCE_DIR}}/prompts/HEARTBEAT.md` for the current task list.
+3. Work through tasks in priority order. Complete one atomic unit of work per heartbeat if tasks are long-running. In `low-fuel` mode, skip proactive tasks and log what was skipped.
+4. Update `{{INSTANCE_DIR}}/.clawdkit/state.json` after each task: set `last_heartbeat`, `active_task`, `queue`, and `budget_mode`.
+5. Log significant actions to `{{INSTANCE_DIR}}/.clawdkit/progress.log` with ISO-8601 timestamp.
+6. If a task requires user input, send a message via `{{NOTIFICATION_CHANNEL}}` and set task status to `waiting`.
+
+## Usage Budget Protocol
+
+The daemon tracks real token consumption via Claude Code's status line integration. A status line script (`statusline.sh`) runs after every assistant message and writes actual rate limit data from Anthropic to `state.json`. The agent reads this data to decide its operating mode.
+
+### Rate Limit Fields (written by statusline.sh)
+
+| Field | Description |
+|---|---|
+| `five_hour_used_pct` | Percentage of 5-hour rolling rate limit consumed (from Anthropic) |
+| `five_hour_resets_at` | Unix epoch when the 5-hour window resets |
+| `seven_day_used_pct` | Percentage of 7-day rolling rate limit consumed |
+| `seven_day_resets_at` | Unix epoch when the 7-day window resets |
+| `session_input_tokens` | Cumulative input tokens this session |
+| `session_output_tokens` | Cumulative output tokens this session |
+| `session_cost_usd` | Cumulative session cost in USD |
+| `usage_updated_at` | ISO-8601 timestamp of last status line update |
+
+### Budget Config Fields
+
+| Field | Default | Description |
+|---|---|---|
+| `budget_mode` | "normal" | Current mode: `normal`, `low-fuel`, or `exhausted` |
+| `low_fuel_threshold_pct` | 80 | 5-hour usage % at which low-fuel mode activates |
+| `exhausted_threshold_pct` | 95 | 5-hour usage % at which exhausted mode activates |
+
+### Budget Modes
+
+On each heartbeat, read `five_hour_used_pct` from `state.json` and update `budget_mode`:
+
+**normal** — `five_hour_used_pct` < `low_fuel_threshold_pct`
+- Process heartbeat tasks and messages normally.
+
+**low-fuel** — `five_hour_used_pct` >= `low_fuel_threshold_pct`
+- Skip proactive heartbeat tasks (GitHub checks, housekeeping, todo work). Log what was skipped.
+- Still process inbound messages — never ignore the user.
+- Prefer compact, token-efficient responses.
+- Log: `entering low-fuel mode — 5h usage at <pct>%`.
+
+**exhausted** — `five_hour_used_pct` >= `exhausted_threshold_pct`
+- Do not process any proactive heartbeat tasks.
+- If woken by an inbound message: respond to it, warn the user that the rate limit is nearly exhausted and recommend using an interactive session, then stop.
+- Compact context and wait for the rate limit window to reset.
+- Log: `budget exhausted — 5h usage at <pct>%`.
+- Note: `heartbeat.sh` also gates at this level — if `five_hour_used_pct` >= `exhausted_threshold_pct` or `budget_mode` is `exhausted`, the heartbeat POST is skipped entirely.
+
+### Mode Transitions
+
+- Modes can go up (normal → low-fuel → exhausted) or down (exhausted → normal) as the rolling window moves.
+- When `five_hour_used_pct` drops below `low_fuel_threshold_pct`, set `budget_mode` back to `normal`.
+- If `five_hour_used_pct` is null (status line hasn't run yet or not a subscriber), default to `normal` and proceed.
+
+### Backward Compatibility
+
+On startup or first heartbeat, if rate limit fields are missing from `state.json`, proceed in `normal` mode. The status line script will populate them after the first assistant message.
 
 ## Messaging Protocol
 
@@ -43,6 +99,7 @@ When an inbound message arrives via `{{NOTIFICATION_CHANNEL}}`:
 2. Execute or queue the requested work.
 3. Respond via the same channel tool used to receive the message.
 4. Log the exchange to `progress.log`.
+5. **Budget awareness** — if `budget_mode` is `exhausted`, process the current message but include a note that the 5-hour rate limit is nearly exhausted and recommend using an interactive session for further work.
 
 Keep responses concise. No filler. Prefer structured output (lists, brief summaries).
 

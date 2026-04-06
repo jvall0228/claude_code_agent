@@ -1,4 +1,8 @@
 {
+  "statusLine": {
+    "type": "command",
+    "command": "{{CLAWDKIT_SCRIPTS_PATH}}/statusline.sh {{INSTANCE_DIR}}"
+  },
   "hooks": {
     "SessionStart": [
       {
