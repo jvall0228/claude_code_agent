@@ -9,6 +9,7 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
+import { createFetchHandler } from './handler.js'
 
 const _rawPort = Number(process.env.CLAWDKIT_HEARTBEAT_PORT ?? 7749)
 if (!Number.isFinite(_rawPort) || _rawPort < 1 || _rawPort > 65535) {
@@ -30,48 +31,25 @@ const mcp = new Server(
 
 // Start HTTP server and stdio handshake in parallel so a blocking stdio
 // handshake doesn't prevent the HTTP health endpoint from coming up.
+const notifier = async (body: string) => {
+  await mcp.notification({
+    method: 'notifications/claude/channel',
+    params: {
+      content: body,
+      meta: {
+        source: 'heartbeat',
+        ts: new Date().toISOString(),
+      },
+    },
+  })
+}
+
 const httpServer = (() => {
   try {
     return Bun.serve({
       port: PORT,
       hostname: '127.0.0.1',
-      async fetch(req) {
-        try {
-          const url = new URL(req.url)
-
-          if (url.pathname === '/heartbeat' && req.method === 'POST') {
-            const body = await req.text()
-            if (!body.trim()) {
-              return new Response('empty body', { status: 400 })
-            }
-
-            try {
-              await mcp.notification({
-                method: 'notifications/claude/channel',
-                params: {
-                  content: body,
-                  meta: {
-                    source: 'heartbeat',
-                    ts: new Date().toISOString(),
-                  },
-                },
-              })
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err)
-              process.stderr.write(`clawdkit-heartbeat: notification failed: ${msg}\n`)
-              return new Response('notification failed', { status: 500 })
-            }
-
-            return new Response(null, { status: 200 })
-          }
-
-          return new Response('not found', { status: 404 })
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err)
-          process.stderr.write(`clawdkit-heartbeat: request handler error: ${msg}\n`)
-          return new Response('internal server error', { status: 500 })
-        }
-      },
+      fetch: createFetchHandler(notifier),
     })
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
